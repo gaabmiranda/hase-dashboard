@@ -1,0 +1,2520 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HASE Engenharia — Dashboard de Tráfego</title>
+<!-- Chart.js carregado de forma não bloqueante -->
+<script>
+// Carrega Chart.js dinamicamente para não bloquear a página
+(function(){
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+  s.onload = function(){ window._chartJsLoaded = true; };
+  s.onerror = function(){ console.warn('Chart.js não carregou. Gráficos desativados.'); window._chartJsLoaded = false; };
+  document.head.appendChild(s);
+})();
+</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f172a;--card:#1e293b;--border:#334155;
+  --text:#f1f5f9;--muted:#94a3b8;
+  --green:#10b981;--blue:#3b82f6;--orange:#f59e0b;
+  --purple:#8b5cf6;--red:#ef4444;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── Header ── */
+.header{
+  background:var(--card);border-bottom:1px solid var(--border);
+  padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100
+}
+.header-brand{display:flex;align-items:center;gap:12px}
+.logo{
+  width:38px;height:38px;background:var(--green);border-radius:10px;
+  display:flex;align-items:center;justify-content:center;font-size:20px
+}
+.header-title{font-size:15px;font-weight:700}
+.header-sub{font-size:11px;color:var(--muted)}
+.header-right{display:flex;align-items:center;gap:10px}
+.status-row{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.dot.err{background:var(--red);animation:none!important}
+.dot.load{background:var(--orange)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.dot{animation:pulse 2s infinite}
+
+/* ── Buttons ── */
+.btn{
+  padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;
+  cursor:pointer;border:none;font-family:inherit;
+  display:inline-flex;align-items:center;gap:5px;transition:all .15s
+}
+.btn-primary{background:var(--green);color:#fff}
+.btn-primary:hover{background:#059669}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.btn-ghost:hover{border-color:var(--green);color:var(--green)}
+.btn-sm{padding:5px 10px;font-size:11px}
+
+/* ── Main ── */
+.main{padding:20px 24px;max-width:1600px;margin:0 auto}
+
+/* ── Filter bar ── */
+.filter-bar{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:14px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px
+}
+.filter-label{font-size:11px;color:var(--muted);white-space:nowrap}
+.preset-btns{display:flex;gap:3px}
+.p-btn{
+  background:var(--bg);border:1px solid var(--border);color:var(--muted);
+  padding:5px 11px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;transition:all .15s
+}
+.p-btn:hover,.p-btn.on{border-color:var(--green);color:var(--green)}
+select,input[type=text],input[type=date]{
+  background:var(--bg);border:1px solid var(--border);color:var(--text);
+  padding:6px 10px;border-radius:6px;font-size:12px;font-family:inherit;outline:none
+}
+select:focus,input:focus{border-color:var(--green)}
+
+/* ── KPI Grid ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:20px}
+.kpi{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:18px;position:relative;overflow:hidden
+}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi.g::before{background:var(--green)}
+.kpi.b::before{background:var(--blue)}
+.kpi.o::before{background:var(--orange)}
+.kpi.p::before{background:var(--purple)}
+.kpi-icon{font-size:20px;margin-bottom:10px}
+.kpi-lbl{font-size:11px;color:var(--muted);margin-bottom:3px}
+.kpi-val{font-size:26px;font-weight:700;line-height:1.1}
+.kpi-val.g{color:var(--green)}
+.kpi-val.b{color:var(--blue)}
+.kpi-val.o{color:var(--orange)}
+.kpi-val.p{color:var(--purple)}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* ── Charts ── */
+.chart-row{display:grid;gap:14px;margin-bottom:14px}
+.chart-row.r2{grid-template-columns:2fr 1fr}
+.chart-row.r3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:1100px){.chart-row.r2,.chart-row.r3{grid-template-columns:1fr}}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px}
+.chart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.chart-title{font-size:13px;font-weight:600}
+.chart-sub{font-size:11px;color:var(--muted)}
+.chart-box{position:relative}
+.chart-box.tall{height:320px}
+.chart-box.med{height:260px}
+
+/* ── Table ── */
+.tbl-section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px}
+.tbl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.sec-title{font-size:14px;font-weight:700}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{
+  text-align:left;padding:9px 11px;font-size:10px;font-weight:600;
+  color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
+  border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none
+}
+th:hover{color:var(--text)}
+th.sa::after{content:' ↑'}
+th.sd::after{content:' ↓'}
+td{padding:9px 11px;border-bottom:1px solid #1a2744;white-space:nowrap}
+tr:hover td{background:rgba(255,255,255,.03)}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600}
+.bp{background:rgba(59,130,246,.18);color:#60a5fa}
+.bs{background:rgba(16,185,129,.18);color:#34d399}
+.bt{background:rgba(245,158,11,.18);color:#fbbf24}
+.bo{background:rgba(107,114,128,.18);color:#9ca3af}
+.bc{background:rgba(236,72,153,.18);color:#f472b6}
+.bmc{background:rgba(139,92,246,.18);color:#a78bfa}
+
+
+/* ── Modal ── */
+.overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+  z-index:9999;align-items:center;justify-content:center
+}
+.modal{
+  background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:26px;width:460px;max-width:92vw
+}
+.modal h3{font-size:16px;margin-bottom:6px}
+.modal p{font-size:12px;color:var(--muted);margin-bottom:18px;line-height:1.5}
+.form-g{margin-bottom:14px}
+.form-lbl{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
+.form-inp{
+  width:100%;background:var(--bg);border:1px solid var(--border);
+  color:var(--text);padding:9px 13px;border-radius:8px;font-size:12px;font-family:inherit;outline:none
+}
+.form-inp:focus{border-color:var(--green)}
+.modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+
+/* ── Loading ── */
+.loading{
+  display:none;position:fixed;inset:0;background:rgba(15,23,42,.8);
+  z-index:200;align-items:center;justify-content:center;flex-direction:column;gap:14px
+}
+.loading.on{display:flex}
+.spin{
+  width:44px;height:44px;border:3px solid var(--border);
+  border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-txt{font-size:13px;color:var(--muted)}
+
+/* ── Misc ── */
+.empty{text-align:center;padding:40px 24px;color:var(--muted)}
+.info-box{
+  margin-top:14px;padding:11px 15px;
+  background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);
+  border-radius:8px;font-size:12px;color:#93c5fd;line-height:1.5
+}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── Metas / Progress bars ── */
+.meta-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:10px}
+.meta-name{min-width:140px;font-size:13px;font-weight:600;white-space:nowrap}
+.meta-bar-wrap{flex:1;background:rgba(255,255,255,.06);border-radius:6px;height:20px;overflow:hidden;position:relative;min-width:80px}
+.meta-bar{height:100%;border-radius:6px;transition:width .5s;min-width:3px}
+.meta-bar.ok{background:linear-gradient(90deg,#059669,#10b981)}
+.meta-bar.warn{background:linear-gradient(90deg,#d97706,#f59e0b)}
+.meta-bar.danger{background:linear-gradient(90deg,#dc2626,#ef4444)}
+.meta-vals{min-width:220px;text-align:right;font-size:12px;white-space:nowrap}
+.meta-section-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.alert-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.18);border-radius:8px;margin-bottom:7px;font-size:12px}
+.alert-row.danger{background:rgba(239,68,68,.07);border-color:rgba(239,68,68,.18)}
+.alert-icon{font-size:15px;flex-shrink:0}
+.alert-name{font-weight:600;min-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alert-detail{color:var(--muted);flex:1;font-size:11px}
+.alert-days{font-weight:700;color:var(--orange);min-width:40px;text-align:right;white-space:nowrap}
+.alert-days.danger{color:var(--red)}
+.forecast-card{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.18);border-radius:10px;padding:16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:600px){.forecast-card{grid-template-columns:1fr}}
+.forecast-item-lbl{font-size:10px;color:var(--muted);margin-bottom:4px}
+.forecast-item-val{font-size:20px;font-weight:700}
+.forecast-item-val.g{color:var(--green)}.forecast-item-val.b{color:var(--blue)}.forecast-item-val.o{color:var(--orange)}
+.hist-chart-wrap{position:relative;height:200px;margin-top:12px}
+
+/* ── Solar Market Section ── */
+.sm-section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px}
+.sm-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.sm-title-row{display:flex;align-items:center;gap:10px}
+.sm-badge{background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.3);color:#a78bfa;font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em}
+.sm-status{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.sm-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.sm-dot.ok{background:var(--green)}
+.sm-dot.err{background:var(--red)}
+.sm-dot.load{background:var(--orange);animation:pulse 1.2s infinite}
+.sm-tabs{display:flex;gap:3px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:0}
+.sm-tab{background:none;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:8px 14px;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.sm-tab:hover{color:var(--text)}
+.sm-tab.on{color:#a78bfa;border-bottom-color:#a78bfa}
+.sm-tab-panel{display:none}
+.sm-tab-panel.on{display:block}
+.sm-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:768px){.sm-grid2{grid-template-columns:1fr}}
+.sm-table-wrap{overflow-x:auto}
+.sm-info-note{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:10px 13px;font-size:11px;color:#fbbf24;margin-bottom:14px;line-height:1.5}
+.sm-setup-card{text-align:center;padding:32px 24px;color:var(--muted)}
+.sm-setup-card h4{font-size:14px;color:var(--text);margin-bottom:8px}
+.sm-setup-card p{font-size:12px;line-height:1.5;margin-bottom:16px}
+/* Pipeline visual */
+.sm-pipeline{display:flex;align-items:stretch;gap:0;margin-bottom:18px;overflow-x:auto}
+.sm-pipe-step{flex:1;min-width:110px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 10px;text-align:center}
+.sm-pipe-step.pv{border-color:rgba(167,139,250,.35)}
+.sm-pipe-step.cm{border-color:rgba(59,130,246,.35)}
+.sm-pipe-step.fin{border-color:rgba(16,185,129,.35)}
+.sm-pipe-step-icon{font-size:18px;margin-bottom:4px}
+.sm-pipe-step-lbl{font-size:10px;color:var(--muted);margin-bottom:6px;line-height:1.3}
+.sm-pipe-step-val{font-size:26px;font-weight:700}
+.sm-pipe-step-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.sm-pipe-step-rate{font-size:11px;font-weight:600;color:var(--muted);margin-top:5px}
+.sm-pipe-arrow{display:flex;align-items:center;padding:0 4px;color:var(--muted);font-size:14px;flex-shrink:0}
+/* KPI row */
+.sm-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.sm-kpi{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.sm-kpi-lbl{font-size:10px;color:var(--muted);margin-bottom:4px}
+.sm-kpi-val{font-size:20px;font-weight:700}
+/* Region cards */
+.sm-region-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+@media(max-width:600px){.sm-region-grid{grid-template-columns:1fr}}
+.sm-region-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+.sm-region-card-title{font-size:12px;font-weight:700;margin-bottom:10px}
+/* Insights */
+.sm-insight-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.sm-insight-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+.sm-insight-card-lbl{font-size:10px;color:var(--muted);margin-bottom:6px}
+.sm-insight-card-val{font-size:22px;font-weight:700;margin-bottom:2px}
+.sm-insight-card-sub{font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loading" id="loading">
+  <div class="spin"></div>
+  <div class="load-txt" id="loadTxt">Carregando dados da Meta Ads...</div>
+</div>
+
+<!-- Token Modal -->
+<div class="overlay" id="tokenModal">
+  <div class="modal">
+    <h3>🔑 Configurar Token de Acesso</h3>
+    <p>Cole o token de acesso do Meta Ads Manager. Ele fica salvo localmente no navegador e você só precisa atualizar quando expirar.</p>
+    <div class="form-g">
+      <label class="form-lbl">Token de Acesso Meta</label>
+      <input type="password" id="tokenInput" class="form-inp" placeholder="EAALpJpd...">
+    </div>
+<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 13px;font-size:11px;color:#fbbf24;margin-bottom:16px;">
+      ⚠ Tokens do Meta expiram periodicamente. Gere um novo em: Meta Business Suite → Configurações → Tokens de Acesso.
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveToken()">Salvar e Conectar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Solar Market Token Modal -->
+<div class="overlay" id="smModal">
+  <div class="modal">
+    <h3>🔗 Conectar Solar Market</h3>
+    <p>Cole o token de API do Solar Market. Ele fica salvo localmente e é renovado automaticamente a cada sessão.</p>
+    <div class="form-g">
+      <label class="form-lbl">Token de API Solar Market</label>
+      <input type="password" id="smTokenInput" class="form-inp" placeholder="21067:vQTc0b6QyS0...">
+    </div>
+    <div style="background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:10px 13px;font-size:11px;color:#c4b5fd;margin-bottom:16px;line-height:1.5">
+      ℹ️ Encontre o token em: Solar Market → Configurações → Integrações → API. O token é permanente e não expira.
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeSmModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveSmToken()" style="background:#7c3aed">Salvar e Conectar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="overlay" id="pwModal">
+  <div class="modal">
+    <h3>🔑 Alterar Senha de Acesso</h3>
+    <p>Define a senha necessária para entrar neste dashboard.</p>
+    <div class="form-g">
+      <label class="form-lbl">Nova Senha</label>
+      <input type="password" id="pwNewInput" class="form-inp" placeholder="Mínimo 4 caracteres">
+    </div>
+    <div class="form-g">
+      <label class="form-lbl">Confirmar Nova Senha</label>
+      <input type="password" id="pwConfInput" class="form-inp" placeholder="Repita a senha">
+    </div>
+    <div id="pwErr" style="color:#f87171;font-size:12px;margin-bottom:8px;display:none"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closePwModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="changePw()">Salvar Senha</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-brand">
+    <div class="logo">☀️</div>
+    <div>
+      <div class="header-title">HASE Engenharia — Dashboard de Tráfego</div>
+      <div class="header-sub">Energia Solar · Norte de Minas & Porto Seguro · CA - HASE (BM-2)</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-row">
+      <div class="dot" id="dot"></div>
+      <span id="statusTxt">Não conectado</span>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="openModal()">⚙ Token</button>
+    <button class="btn btn-ghost btn-sm" onclick="openSmModal()" style="border-color:rgba(139,92,246,.4);color:#a78bfa" id="smConnectBtn">🔗 Solar Market</button>
+    <button class="btn btn-primary btn-sm" onclick="loadData()">↻ Atualizar</button>
+    <button class="btn btn-ghost btn-sm" onclick="openPwModal()" title="Alterar senha de acesso">🔑 Senha</button>
+    <button class="btn btn-ghost btn-sm" onclick="doLogout()" style="border-color:rgba(239,68,68,.3);color:#f87171" title="Sair do dashboard">🚪 Sair</button>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="filter-label">Período:</span>
+      <div class="preset-btns">
+        <button class="p-btn" onclick="setPreset('today',this)">Hoje</button>
+        <button class="p-btn" onclick="setPreset('yesterday',this)">Ontem</button>
+        <button class="p-btn" onclick="setPreset('last_7d',this)">7 dias</button>
+        <button class="p-btn on" id="defaultPreset" onclick="setPreset('last_30d',this)">30 dias</button>
+        <button class="p-btn" onclick="setPreset('this_month',this)">Este mês</button>
+        <button class="p-btn" onclick="setPreset('last_month',this)">Mês anterior</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="filter-label">De:</span>
+      <input type="date" id="dateFrom" onchange="setCustomDate()">
+      <span class="filter-label">Até:</span>
+      <input type="date" id="dateTo" onchange="setCustomDate()">
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="filter-label">Região:</span>
+      <div id="filtRegion" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+        <button class="p-btn reg-btn on" data-region="all" onclick="toggleRegion(this)">Todas</button>
+        <button class="p-btn reg-btn" data-region="Porto Seguro" onclick="toggleRegion(this)">Porto Seguro</button>
+        <button class="p-btn reg-btn" data-region="Salinas" onclick="toggleRegion(this)">Salinas</button>
+        <button class="p-btn reg-btn" data-region="Taiobeiras" onclick="toggleRegion(this)">Taiobeiras</button>
+        <button class="p-btn reg-btn" data-region="Capelinha" onclick="toggleRegion(this)">Capelinha</button>
+        <button class="p-btn reg-btn" data-region="Montes Claros" onclick="toggleRegion(this)">Montes Claros</button>
+        <button class="p-btn reg-btn" data-region="Araçuaí" onclick="toggleRegion(this)">Araçuaí</button>
+        <button class="p-btn reg-btn" data-region="Outros" onclick="toggleRegion(this)">Outros</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="filter-label">Campanha:</span>
+      <select id="filtCampaign" onchange="applyFilters()">
+        <option value="all">Todas</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi g">
+      <div class="kpi-icon">👥</div>
+      <div class="kpi-lbl">Leads Totais</div>
+      <div class="kpi-val g" id="kLeads">—</div>
+      <div class="kpi-sub" id="kLeadsSub">— form + — conversas</div>
+    </div>
+    <div class="kpi o">
+      <div class="kpi-icon">💰</div>
+      <div class="kpi-lbl">CPL Real</div>
+      <div class="kpi-val o" id="kCpl">—</div>
+      <div class="kpi-sub">Custo por lead gerado</div>
+    </div>
+    <div class="kpi b">
+      <div class="kpi-icon">💸</div>
+      <div class="kpi-lbl">Investimento</div>
+      <div class="kpi-val b" id="kSpend">—</div>
+      <div class="kpi-sub">Total gasto no período</div>
+    </div>
+    <div class="kpi p">
+      <div class="kpi-icon">👁</div>
+      <div class="kpi-lbl">Impressões</div>
+      <div class="kpi-val p" id="kImpr">—</div>
+      <div class="kpi-sub" id="kReach">Alcance: —</div>
+    </div>
+    <div class="kpi b">
+      <div class="kpi-icon">🖱</div>
+      <div class="kpi-lbl">Cliques no Link</div>
+      <div class="kpi-val b" id="kClicks">—</div>
+      <div class="kpi-sub" id="kCtr">CTR: —%</div>
+    </div>
+    <div class="kpi o">
+      <div class="kpi-icon">🔁</div>
+      <div class="kpi-lbl">Frequência Média</div>
+      <div class="kpi-val o" id="kFreq">—</div>
+      <div class="kpi-sub">Exibições por pessoa</div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1: Evolution (wide) + Region (narrow) -->
+  <div class="chart-row r2" style="margin-bottom:14px">
+    <div class="chart-card">
+      <div class="chart-head">
+        <div>
+          <div class="chart-title">📈 Evolução Diária</div>
+          <div class="chart-sub">Leads totais e CPL ao longo do tempo</div>
+        </div>
+        <select id="evMetric" onchange="renderEvolution()" style="font-size:11px;padding:4px 8px">
+          <option value="leads">Leads + CPL</option>
+          <option value="spend">Investimento</option>
+          <option value="impressions">Impressões</option>
+        </select>
+      </div>
+      <div class="chart-box tall"><canvas id="cEvolution"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-head">
+        <div>
+          <div class="chart-title">📍 Por Região</div>
+          <div class="chart-sub">Leads e investimento</div>
+        </div>
+      </div>
+      <div class="chart-box tall"><canvas id="cRegions"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2: 3 small charts -->
+  <div class="chart-row r3" style="margin-bottom:20px">
+    <div class="chart-card">
+      <div class="chart-head">
+        <div>
+          <div class="chart-title">🎯 Tipo de Lead</div>
+          <div class="chart-sub">Formulário vs Nova Conversa</div>
+        </div>
+      </div>
+      <div class="chart-box med"><canvas id="cLeadTypes"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-head">
+        <div>
+          <div class="chart-title">💰 CPL por Região</div>
+          <div class="chart-sub">Custo médio por lead</div>
+        </div>
+      </div>
+      <div class="chart-box med"><canvas id="cCplRegion"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-head">
+        <div>
+          <div class="chart-title">🍕 Distribuição de Leads</div>
+          <div class="chart-sub">% por região</div>
+        </div>
+      </div>
+      <div class="chart-box med"><canvas id="cLeadDist"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Adsets Table -->
+  <div class="tbl-section">
+    <div class="tbl-head">
+      <div class="sec-title">Detalhamento por Conjunto de Anúncios</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="tblSearch" placeholder="🔍 Buscar..." onkeyup="renderTable()" style="width:200px;font-size:11px">
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('region')">Região</th>
+            <th onclick="sortBy('adset')">Conjunto de Anúncios</th>
+            <th onclick="sortBy('campaign')">Campanha</th>
+            <th onclick="sortBy('spend')">Gasto</th>
+            <th onclick="sortBy('impressions')">Impressões</th>
+            <th onclick="sortBy('clicks')">Cliques</th>
+            <th onclick="sortBy('ctr')">CTR</th>
+            <th onclick="sortBy('formLeads')">Form</th>
+            <th onclick="sortBy('msgLeads')">Conversa</th>
+            <th onclick="sortBy('totalLeads')">Total Leads</th>
+            <th onclick="sortBy('cpl')">CPL</th>
+          </tr>
+        </thead>
+        <tbody id="tblBody">
+          <tr><td colspan="11"><div class="empty">Configure o token e clique em "Atualizar" para carregar os dados.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+
+  <!-- Solar Market Comercial Section -->
+  <div class="sm-section" id="smSection">
+    <div class="sm-header">
+      <div class="sm-title-row">
+        <span class="sec-title">📈 Funil Comercial</span>
+        <span class="sm-badge">Solar Market</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="sm-status">
+          <div class="sm-dot" id="smDot"></div>
+          <span id="smStatusTxt">Não conectado</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="smExportEventsCSV()" title="Exportar planilha completa de eventos de etapa de todos os leads" style="border-color:rgba(139,92,246,.3);color:#a78bfa;font-size:10px">📥 Exportar Log</button>
+      </div>
+    </div>
+
+    <!-- Não configurado -->
+    <div id="smSetup" class="sm-setup-card" style="display:none">
+      <div style="font-size:36px;margin-bottom:12px">🔗</div>
+      <h4>Conecte o Solar Market</h4>
+      <p>Clique no botão abaixo para configurar o token de API e visualizar o funil comercial completo com dados de propostas, fechamentos e métricas por vendedor.</p>
+      <button class="btn btn-primary" onclick="openSmModal()" style="background:#7c3aed">Configurar Solar Market</button>
+    </div>
+
+    <!-- Conteúdo carregado -->
+    <div id="smContent" style="display:none">
+      <!-- Nota sobre snapshot -->
+      <div class="sm-info-note" id="smSnapshotNote" style="display:none">
+        ⚠️ O sistema de snapshot está registrando as transições de etapa pela primeira vez. Dados de <strong>Finalizado</strong> vão acumular a partir de agora — histórico anterior não está disponível.
+      </div>
+
+      <!-- Filtro de período do funil comercial -->
+      <div class="filter-bar" style="margin:0;border-radius:0;border-left:none;border-right:none;border-top:1px solid var(--border);border-bottom:none">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="filter-label">Período:</span>
+          <div class="preset-btns">
+            <button class="p-btn sm-p-btn" onclick="smSetPreset('today',this)">Hoje</button>
+            <button class="p-btn sm-p-btn" onclick="smSetPreset('yesterday',this)">Ontem</button>
+            <button class="p-btn sm-p-btn" onclick="smSetPreset('last_7d',this)">7 dias</button>
+            <button class="p-btn sm-p-btn on" onclick="smSetPreset('this_month',this)">Este mês</button>
+            <button class="p-btn sm-p-btn" onclick="smSetPreset('last_month',this)">Mês passado</button>
+            <button class="p-btn sm-p-btn" onclick="smSetPreset('last_30d',this)">30 dias</button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="filter-label">De:</span>
+          <input type="date" id="smDateFrom" onchange="smSetCustomDate()">
+          <span class="filter-label">Até:</span>
+          <input type="date" id="smDateTo" onchange="smSetCustomDate()">
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="sm-tabs">
+        <button class="sm-tab on" onclick="smSelectTab('geral',this)">Geral</button>
+        <button class="sm-tab" onclick="smSelectTab('bahia',this)">🔵 Bahia</button>
+        <button class="sm-tab" onclick="smSelectTab('mg',this)">🟢 Minas Gerais</button>
+        <button class="sm-tab" onclick="smSelectTab('vendedor',this)">👤 Por Vendedor</button>
+        <button class="sm-tab" onclick="smSelectTab('insights',this)">💡 Insights</button>
+        <button class="sm-tab" onclick="smSelectTab('metas',this)">🎯 Metas</button>
+        <button class="sm-tab" onclick="smSelectTab('parados',this)">⚠ Parados</button>
+      </div>
+
+      <!-- Tab Geral -->
+      <div class="sm-tab-panel on" id="smTab-geral">
+        <div id="smPipelineGeral"></div>
+        <div id="smKpisGeral" class="sm-kpis"></div>
+        <div class="sm-grid2">
+          <div class="chart-card"><div class="chart-head"><div><div class="chart-title">⏱ Tempo Médio por Etapa (dias)</div><div class="chart-sub">Da criação até cada marco</div></div></div><div class="chart-box med"><canvas id="smChartTempo"></canvas></div></div>
+          <div class="chart-card"><div class="chart-head"><div><div class="chart-title">📊 Distribuição por Funil</div><div class="chart-sub">Leads em Pré-Vendas vs Comercial</div></div></div><div class="chart-box med"><canvas id="smChartFunnel"></canvas></div></div>
+        </div>
+      </div>
+
+      <!-- Tab Bahia -->
+      <div class="sm-tab-panel" id="smTab-bahia">
+        <div id="smPipelineBA"></div>
+        <div id="smKpisBA" class="sm-kpis"></div>
+        <div class="chart-card" style="margin-bottom:14px">
+          <div class="chart-head"><div><div class="chart-title">👤 Vendedores — Bahia</div><div class="chart-sub">Pré-Vendas e Comercial</div></div></div>
+          <div class="sm-table-wrap"><table><thead><tr><th>Vendedor</th><th>Recebido</th><th>Qualificado</th><th>% Qualif.</th><th>Proposta</th><th>% Prop.</th><th>Finalizado</th><th>% Final.</th><th>Faturamento</th><th>Ticket Médio</th><th>Ciclo</th></tr></thead><tbody id="smTblBA"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- Tab MG -->
+      <div class="sm-tab-panel" id="smTab-mg">
+        <div id="smPipelineMG"></div>
+        <div id="smKpisMG" class="sm-kpis"></div>
+        <div class="chart-card" style="margin-bottom:14px">
+          <div class="chart-head"><div><div class="chart-title">👤 Vendedores — Minas Gerais</div><div class="chart-sub">Pré-Vendas e Comercial</div></div></div>
+          <div class="sm-table-wrap"><table><thead><tr><th>Vendedor</th><th>Recebido</th><th>Qualificado</th><th>% Qualif.</th><th>Proposta</th><th>% Prop.</th><th>Finalizado</th><th>% Final.</th><th>Faturamento</th><th>Ticket Médio</th><th>Ciclo</th></tr></thead><tbody id="smTblMG"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- Tab Por Vendedor -->
+      <div class="sm-tab-panel" id="smTab-vendedor">
+        <div class="chart-card">
+          <div class="chart-head"><div><div class="chart-title">🏆 Ranking de Vendedores</div><div class="chart-sub">Todos os funis no período</div></div></div>
+          <div class="sm-table-wrap"><table><thead><tr><th>Região</th><th>Vendedor</th><th>Recebido</th><th>Qualificado</th><th>% Qualif.</th><th>Proposta</th><th>% Prop.</th><th>Finalizado</th><th>% Final.</th><th>Faturamento</th><th>Ticket Médio</th><th>Ciclo</th></tr></thead><tbody id="smTblVendedor"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- Tab Insights -->
+      <div class="sm-tab-panel" id="smTab-insights">
+        <div id="smInsightsContent"></div>
+        <div class="chart-card" id="smHistoricoCard" style="margin-top:14px;display:none">
+          <div class="chart-head"><div><div class="chart-title">📅 Evolução Histórica — Mês a Mês</div><div class="chart-sub">Fechamentos e faturamento por mês (baseado no snapshot)</div></div></div>
+          <div class="hist-chart-wrap"><canvas id="smChartHistorico"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Tab Metas -->
+      <div class="sm-tab-panel" id="smTab-metas">
+        <div id="smMetasContent" style="padding:4px 0"></div>
+      </div>
+
+      <!-- Tab Parados -->
+      <div class="sm-tab-panel" id="smTab-parados">
+        <div id="smParadosContent" style="padding:4px 0"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════
+const API = 'https://graph.facebook.com/v21.0';
+const ACCOUNT = 'act_4350753358268289';
+const TOKEN_KEY = 'hase_token';
+const TOKEN_EXPIRY_KEY = 'hase_token_expiry';
+// APP_ID/APP_SECRET ficam server-side. Renovação via POST /renew-token.
+
+// localStorage seguro (pode ser bloqueado em file://)
+const store = {
+  get: function(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set: function(k,v){ try{ localStorage.setItem(k,v); }catch(e){ console.warn('localStorage indisponível'); } },
+  parse: function(k,def){ try{ return JSON.parse(localStorage.getItem(k)||'null')||def; }catch(e){ return def; } }
+};
+
+let token = store.get(TOKEN_KEY) || '';
+let rawData = [];
+let tableAgg = [];
+let sortCfg = { field: 'totalLeads', dir: 'desc' };
+let activePreset = 'last_30d';
+let customRange = null;
+var smActivePreset = 'this_month'; // filtro independente do funil comercial
+let charts = {};
+
+// ═══════════════════════════════════════════════
+// FORMAT HELPERS
+// ═══════════════════════════════════════════════
+const R = n => n == null || isNaN(n) ? '—' : 'R$ ' + (+n).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const N = n => n == null ? '—' : (+n).toLocaleString('pt-BR');
+const P = n => n == null ? '—' : (+n).toFixed(2).replace('.', ',') + '%';
+const fmtDate = s => { if (!s) return ''; const [y,m,d] = s.split('-'); return `${d}/${m}`; };
+
+function getAction(actions, type) {
+  if (!actions) return 0;
+  const a = actions.find(a => a.action_type === type);
+  return a ? parseFloat(a.value) : 0;
+}
+
+function getRegion(name) {
+  const n = name.toUpperCase();
+  if (n.includes('PORTO SEGURO') || n.includes('VIDEOVIEW PORTO')) return 'Porto Seguro';
+  if (n.includes('SALINAS')) return 'Salinas';
+  if (n.includes('TAIOBEIRAS')) return 'Taiobeiras';
+  if (n.includes('CAPELINHA')) return 'Capelinha';
+  if (n.includes('MONTES CLAROS')) return 'Montes Claros';
+  if (n.includes('ARACUAI') || n.includes('ARAÇUAÍ')) return 'Araçuaí';
+  return 'Outros';
+}
+
+function badgeClass(r) {
+  return {'Porto Seguro':'bp','Salinas':'bs','Taiobeiras':'bt','Capelinha':'bc','Montes Claros':'bmc','Araçuaí':'bs'}[r] || 'bo';
+}
+
+// ═══════════════════════════════════════════════
+// UI STATE
+// ═══════════════════════════════════════════════
+function setLoading(on, msg) {
+  document.getElementById('loading').classList.toggle('on', on);
+  if (msg) document.getElementById('loadTxt').textContent = msg;
+}
+
+function setStatus(state, msg) {
+  const dot = document.getElementById('dot');
+  dot.className = 'dot' + (state === 'ok' ? '' : state === 'err' ? ' err' : ' load');
+  document.getElementById('statusTxt').textContent = msg;
+}
+
+// ═══════════════════════════════════════════════
+// CONFIG PERSISTENTE (config.json via servidor)
+// ═══════════════════════════════════════════════
+function saveConfig(data) {
+  // Só funciona quando acessado via servidor (http://localhost:8080)
+  try {
+    fetch('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).catch(function() {}); // silencioso se offline
+  } catch(e) {}
+}
+
+async function loadConfig() {
+  try {
+    // 1) Estado mínimo (sem segredos)
+    var resp = await fetch('/config');
+    if (!resp.ok) return;
+    var cfg = await resp.json();
+
+    // 2) Token Meta: busca via endpoint dedicado (necessário pq chamadas Graph API
+    //    são feitas direto do browser). Substitui qualquer token velho em localStorage.
+    if (cfg.tokenConfigured) {
+      try {
+        var tkResp = await fetch('/meta-token');
+        if (tkResp.ok) {
+          var tkData = await tkResp.json();
+          if (tkData.token) {
+            token = tkData.token;
+            store.set(TOKEN_KEY, token);
+            store.set(TOKEN_EXPIRY_KEY, ''); // expiry agora é controlado server-side
+          }
+        }
+      } catch(e) {}
+    }
+
+    // 3) Flag SolarMarket (apiKey nunca chega ao frontend; JWT vem via /sm-signin)
+    if (cfg.smConfigured) {
+      store.set(SM_APIKEY_KEY, '__server__'); // sentinela: server tem a chave
+    }
+  } catch(e) {
+    // Silencioso — pode estar abrindo via file:// sem servidor
+  }
+}
+
+// ═══════════════════════════════════════════════
+// TOKEN
+// ═══════════════════════════════════════════════
+function openModal() {
+  var m = document.getElementById('tokenModal');
+  if (!m) { alert('Elemento modal não encontrado — verifique se o arquivo carregou corretamente.'); return; }
+  m.style.display = 'flex';
+}
+function closeModal() {
+  var m = document.getElementById('tokenModal');
+  if (m) m.style.display = 'none';
+}
+
+function saveToken() {
+  var v = document.getElementById('tokenInput').value.trim();
+  if (v && !v.startsWith('•') && v.length > 10) {
+    token = v;
+    store.set(TOKEN_KEY, token);
+    // Remove expiry antiga para que o auto-renew tente renovar na próxima carga
+    store.set(TOKEN_EXPIRY_KEY, '');
+    // Persiste no servidor (não se perde ao fechar o Chrome)
+    saveConfig({ token: v, tokenExpiry: '' });
+  }
+  closeModal();
+  loadData();
+}
+
+// ═══════════════════════════════════════════════
+// DATE PRESETS
+// ═══════════════════════════════════════════════
+function setPreset(preset, el) {
+  activePreset = preset;
+  customRange = null;
+  document.querySelectorAll('.p-btn:not(.sm-p-btn)').forEach(b => b.classList.remove('on'));
+  if (el) el.classList.add('on');
+  document.getElementById('dateFrom').value = '';
+  document.getElementById('dateTo').value = '';
+  if (token) loadData();
+}
+
+function setCustomDate() {
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  if (from && to && from <= to) {
+    customRange = { since: from, until: to };
+    activePreset = null;
+    document.querySelectorAll('.p-btn:not(.sm-p-btn)').forEach(b => b.classList.remove('on'));
+    if (token) loadData();
+  }
+}
+
+function getDateParams() {
+  if (customRange) return { time_range: JSON.stringify(customRange) };
+  return { date_preset: activePreset };
+}
+
+// ═══════════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════════
+async function fetchPages(url) {
+  const all = [];
+  let next = url;
+  let page = 0;
+  while (next && page < 25) {
+    const r = await fetch(next);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message);
+    all.push(...(d.data || []));
+    next = d.paging?.next || null;
+    page++;
+    if (page > 1) setLoading(true, `Carregando página ${page}...`);
+  }
+  return all;
+}
+
+async function loadData() {
+  if (!token) { openModal(); return; }
+
+  setLoading(true, 'Conectando à Meta API...');
+  setStatus('load', 'Carregando...');
+
+  try {
+    const fields = [
+      'adset_name','campaign_name','spend','actions',
+      'impressions','clicks','reach','frequency','date_start','date_stop'
+    ].join(',');
+
+    const params = new URLSearchParams({
+      fields,
+      level: 'adset',
+      time_increment: '1',
+      limit: '500',
+      access_token: token,
+      ...getDateParams()
+    });
+
+    const data = await fetchPages(`${API}/${ACCOUNT}/insights?${params}`);
+
+    rawData = data.map(d => {
+      const formLeads = getAction(d.actions, 'lead');
+      const msgLeads = getAction(d.actions, 'onsite_conversion.messaging_conversation_started_7d');
+      const totalLeads = formLeads + msgLeads;
+      const spend = parseFloat(d.spend) || 0;
+      return {
+        date: d.date_start,
+        adset: d.adset_name,
+        campaign: d.campaign_name,
+        region: getRegion(d.adset_name),
+        spend,
+        impressions: parseInt(d.impressions) || 0,
+        clicks: parseInt(d.clicks) || 0,
+        reach: parseInt(d.reach) || 0,
+        frequency: parseFloat(d.frequency) || 0,
+        ctr: parseFloat(d.ctr) || 0,
+        formLeads, msgLeads, totalLeads,
+        cpl: totalLeads > 0 ? spend / totalLeads : null
+      };
+    });
+
+    // Populate campaign filter
+    const campaigns = [...new Set(rawData.map(d => d.campaign))].sort();
+    const sel = document.getElementById('filtCampaign');
+    sel.innerHTML = '<option value="all">Todas</option>' +
+      campaigns.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    const now = new Date().toLocaleTimeString('pt-BR');
+    setStatus('ok', `${rawData.length} registros • atualizado ${now}`);
+
+    applyFilters();
+
+  } catch (e) {
+    setStatus('err', 'Erro: ' + e.message);
+    if (e.message.includes('expired') || e.message.includes('token')) {
+      setTimeout(() => {
+        if (confirm('Token expirado ou inválido. Deseja configurar um novo token?')) openModal();
+      }, 300);
+    }
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// AGGREGATIONS
+// ═══════════════════════════════════════════════
+function getSelectedRegions() {
+  var active = [];
+  document.querySelectorAll('#filtRegion .reg-btn.on').forEach(function(b) {
+    active.push(b.dataset.region);
+  });
+  return active;
+}
+
+function toggleRegion(btn) {
+  var region = btn.dataset.region;
+  var allBtn = document.querySelector('#filtRegion .reg-btn[data-region="all"]');
+  if (region === 'all') {
+    // "Todas" ativado: desativa todos os outros
+    document.querySelectorAll('#filtRegion .reg-btn').forEach(function(b) { b.classList.remove('on'); });
+    btn.classList.add('on');
+  } else {
+    // Desativa "Todas"
+    allBtn.classList.remove('on');
+    btn.classList.toggle('on');
+    // Se nenhum selecionado, volta pra "Todas"
+    var anyOn = document.querySelectorAll('#filtRegion .reg-btn.on').length > 0;
+    if (!anyOn) allBtn.classList.add('on');
+  }
+  applyFilters();
+}
+
+function filtered() {
+  const regs = getSelectedRegions();
+  const allSelected = regs.includes('all');
+  const cam = document.getElementById('filtCampaign').value;
+  return rawData.filter(d =>
+    (allSelected || regs.includes(d.region)) &&
+    (cam === 'all' || d.campaign === cam)
+  );
+}
+
+function aggTotal(data) {
+  const spend = data.reduce((s,d) => s+d.spend, 0);
+  const leads = data.reduce((s,d) => s+d.totalLeads, 0);
+  const form  = data.reduce((s,d) => s+d.formLeads, 0);
+  const msg   = data.reduce((s,d) => s+d.msgLeads, 0);
+  const impr  = data.reduce((s,d) => s+d.impressions, 0);
+  const clicks= data.reduce((s,d) => s+d.clicks, 0);
+  const reach = data.reduce((s,d) => s+d.reach, 0);
+  const freq  = reach > 0 ? impr/reach : 0;
+  const ctr   = impr > 0 ? (clicks/impr)*100 : 0;
+  const cpl   = leads > 0 ? spend/leads : null;
+  return { spend, leads, form, msg, impr, clicks, reach, freq, ctr, cpl };
+}
+
+function aggByDate(data) {
+  const m = {};
+  data.forEach(d => {
+    if (!m[d.date]) m[d.date] = { date:d.date,spend:0,totalLeads:0,formLeads:0,msgLeads:0,impressions:0,clicks:0,reach:0 };
+    const r = m[d.date];
+    r.spend+=d.spend; r.totalLeads+=d.totalLeads; r.formLeads+=d.formLeads;
+    r.msgLeads+=d.msgLeads; r.impressions+=d.impressions; r.clicks+=d.clicks; r.reach+=d.reach;
+  });
+  return Object.values(m).sort((a,b)=>a.date.localeCompare(b.date))
+    .map(d => ({ ...d, cpl: d.totalLeads>0 ? d.spend/d.totalLeads : null }));
+}
+
+function aggByRegion(data) {
+  const m = {};
+  data.forEach(d => {
+    if (!m[d.region]) m[d.region]={region:d.region,spend:0,totalLeads:0,formLeads:0,msgLeads:0,impressions:0,clicks:0};
+    const r=m[d.region];
+    r.spend+=d.spend;r.totalLeads+=d.totalLeads;r.formLeads+=d.formLeads;
+    r.msgLeads+=d.msgLeads;r.impressions+=d.impressions;r.clicks+=d.clicks;
+  });
+  return Object.values(m).map(d=>({...d,cpl:d.totalLeads>0?d.spend/d.totalLeads:null}))
+    .sort((a,b)=>b.totalLeads-a.totalLeads);
+}
+
+function aggByAdset(data) {
+  const m = {};
+  data.forEach(d => {
+    const k = d.adset+'||'+d.campaign;
+    if (!m[k]) m[k]={adset:d.adset,campaign:d.campaign,region:d.region,
+      spend:0,impressions:0,clicks:0,reach:0,formLeads:0,msgLeads:0,totalLeads:0,_ci:0,_ii:0};
+    const r=m[k];
+    r.spend+=d.spend;r.impressions+=d.impressions;r.clicks+=d.clicks;r.reach+=d.reach;
+    r.formLeads+=d.formLeads;r.msgLeads+=d.msgLeads;r.totalLeads+=d.totalLeads;
+    r._ci+=d.clicks;r._ii+=d.impressions;
+  });
+  return Object.values(m).map(d=>({
+    ...d,
+    ctr:d._ii>0?(d._ci/d._ii)*100:0,
+    cpl:d.totalLeads>0?d.spend/d.totalLeads:null
+  }));
+}
+
+// ═══════════════════════════════════════════════
+// APPLY FILTERS + RENDER ALL
+// ═══════════════════════════════════════════════
+function applyFilters() {
+  const data = filtered();
+  updateKPIs(data);
+  renderEvolution(data);
+  renderRegions(data);
+  renderLeadTypes(data);
+  renderCplRegion(data);
+  renderLeadDist(data);
+  tableAgg = aggByAdset(data);
+  renderTable();
+}
+
+// ═══════════════════════════════════════════════
+// KPIs
+// ═══════════════════════════════════════════════
+function updateKPIs(data) {
+  const a = aggTotal(data);
+  document.getElementById('kLeads').textContent = N(a.leads);
+  document.getElementById('kLeadsSub').textContent = `${a.form} form + ${a.msg} conversas`;
+  document.getElementById('kCpl').textContent = a.cpl ? R(a.cpl) : '—';
+  document.getElementById('kSpend').textContent = R(a.spend);
+  document.getElementById('kImpr').textContent = N(a.impr);
+  document.getElementById('kReach').textContent = 'Alcance: ' + N(a.reach);
+  document.getElementById('kClicks').textContent = N(a.clicks);
+  document.getElementById('kCtr').textContent = 'CTR: ' + P(a.ctr);
+  document.getElementById('kFreq').textContent = a.freq.toFixed(2).replace('.', ',');
+}
+
+// ═══════════════════════════════════════════════
+// CHART HELPERS
+// ═══════════════════════════════════════════════
+const GRID = 'rgba(51,65,85,.6)';
+const MUTED = '#94a3b8';
+
+function chartDefaults() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: MUTED, font:{size:11}, boxWidth:12 } },
+      tooltip: {
+        backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,
+        titleColor:'#f1f5f9',bodyColor:MUTED,padding:12
+      }
+    },
+    scales: {
+      x: { grid:{color:GRID}, ticks:{color:MUTED,font:{size:10},maxTicksLimit:10,maxRotation:30} },
+      y: { grid:{color:GRID}, ticks:{color:MUTED,font:{size:11}} }
+    }
+  };
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// ═══════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════
+function renderEvolution(data) {
+  data = data || filtered();
+  const byDate = aggByDate(data);
+  destroyChart('ev');
+  if (!byDate.length) return;
+
+  const labels = byDate.map(d => fmtDate(d.date));
+  const metric = document.getElementById('evMetric').value;
+  let datasets = [];
+
+  if (metric === 'leads') {
+    datasets = [
+      {
+        label:'Leads Totais', data: byDate.map(d=>d.totalLeads),
+        borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.12)', fill:true, tension:.4, yAxisID:'y'
+      },
+      {
+        label:'CPL (R$)', data: byDate.map(d=>d.cpl?+d.cpl.toFixed(2):null),
+        borderColor:'#f59e0b', backgroundColor:'transparent', borderDash:[5,5], tension:.4, yAxisID:'y1', spanGaps:true
+      }
+    ];
+  } else if (metric === 'spend') {
+    datasets = [{
+      label:'Investimento (R$)', data: byDate.map(d=>+d.spend.toFixed(2)),
+      borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,.12)', fill:true, tension:.4
+    }];
+  } else {
+    datasets = [{
+      label:'Impressões', data: byDate.map(d=>d.impressions),
+      borderColor:'#8b5cf6', backgroundColor:'rgba(139,92,246,.12)', fill:true, tension:.4
+    }];
+  }
+
+  const opts = {
+    ...chartDefaults(),
+    interaction: { mode:'index', intersect:false },
+    scales: {
+      x: { grid:{color:GRID}, ticks:{color:MUTED,font:{size:10},maxTicksLimit:12,maxRotation:30} },
+      y: {
+        position:'left', grid:{color:GRID},
+        ticks:{ color: metric==='leads'?'#10b981':MUTED, font:{size:11} }
+      },
+      ...(metric==='leads' ? {
+        y1: {
+          position:'right', grid:{drawOnChartArea:false},
+          ticks:{ color:'#f59e0b', font:{size:11}, callback: v=>'R$'+Math.round(v) }
+        }
+      } : {})
+    }
+  };
+
+  charts['ev'] = new Chart(document.getElementById('cEvolution').getContext('2d'),
+    { type:'line', data:{ labels, datasets }, options:opts });
+}
+
+function renderRegions(data) {
+  data = data || filtered();
+  const byReg = aggByRegion(data);
+  destroyChart('reg');
+  if (!byReg.length) return;
+
+  const COLORS = { 'Porto Seguro':'#3b82f6','Salinas':'#10b981','Taiobeiras':'#f59e0b','Capelinha':'#ec4899','Montes Claros':'#8b5cf6','Outros':'#6b7280' };
+
+  charts['reg'] = new Chart(document.getElementById('cRegions').getContext('2d'), {
+    type:'bar',
+    data:{
+      labels: byReg.map(d=>d.region),
+      datasets:[
+        {
+          label:'Leads', data: byReg.map(d=>d.totalLeads),
+          backgroundColor: byReg.map(d=>COLORS[d.region]||'#6b7280'), yAxisID:'y',
+          borderRadius:5
+        },
+        {
+          label:'Gasto (R$)', data: byReg.map(d=>+d.spend.toFixed(2)),
+          backgroundColor: byReg.map(d=>(COLORS[d.region]||'#6b7280')+'44'), yAxisID:'y1',
+          borderRadius:5
+        }
+      ]
+    },
+    options:{
+      ...chartDefaults(),
+      scales:{
+        x:{grid:{color:GRID},ticks:{color:MUTED,font:{size:11}}},
+        y:{position:'left',grid:{color:GRID},ticks:{color:MUTED,font:{size:11}},title:{display:true,text:'Leads',color:MUTED}},
+        y1:{position:'right',grid:{drawOnChartArea:false},ticks:{color:MUTED,font:{size:11},callback:v=>'R$'+Math.round(v)}}
+      }
+    }
+  });
+}
+
+function renderLeadTypes(data) {
+  data = data || filtered();
+  const a = aggTotal(data);
+  destroyChart('lt');
+  charts['lt'] = new Chart(document.getElementById('cLeadTypes').getContext('2d'), {
+    type:'doughnut',
+    data:{
+      labels:['Formulários','Novas Conversas'],
+      datasets:[{
+        data:[a.form, a.msg],
+        backgroundColor:['#10b981','#3b82f6'],
+        borderColor:'#1e293b', borderWidth:2
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{color:MUTED,font:{size:11},boxWidth:12,padding:14} },
+        tooltip:{
+          backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,
+          titleColor:'#f1f5f9',bodyColor:MUTED,
+          callbacks:{ label: ctx => {
+            const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+            const pct = total>0?((ctx.parsed/total)*100).toFixed(1):0;
+            return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+          }}
+        }
+      }
+    }
+  });
+}
+
+function renderCplRegion(data) {
+  data = data || filtered();
+  const byReg = aggByRegion(data).filter(d=>d.cpl!==null&&d.totalLeads>0);
+  destroyChart('cr');
+  if (!byReg.length) return;
+
+  charts['cr'] = new Chart(document.getElementById('cCplRegion').getContext('2d'), {
+    type:'bar',
+    data:{
+      labels: byReg.map(d=>d.region),
+      datasets:[{
+        label:'CPL (R$)',
+        data: byReg.map(d=>+d.cpl.toFixed(2)),
+        backgroundColor:['#f59e0b','#10b981','#3b82f6','#6b7280'],
+        borderRadius:6
+      }]
+    },
+    options:{
+      ...chartDefaults(),
+      indexAxis:'y',
+      plugins:{ ...chartDefaults().plugins, legend:{display:false} },
+      scales:{
+        x:{grid:{color:GRID},ticks:{color:MUTED,font:{size:10},callback:v=>'R$'+v}},
+        y:{grid:{display:false},ticks:{color:MUTED,font:{size:11}}}
+      }
+    }
+  });
+}
+
+function renderLeadDist(data) {
+  data = data || filtered();
+  const byReg = aggByRegion(data);
+  destroyChart('ld');
+  if (!byReg.length) return;
+
+  const COLORS = ['#3b82f6','#10b981','#f59e0b','#ec4899','#8b5cf6','#6b7280'];
+
+  charts['ld'] = new Chart(document.getElementById('cLeadDist').getContext('2d'), {
+    type:'pie',
+    data:{
+      labels: byReg.map(d=>d.region),
+      datasets:[{
+        data: byReg.map(d=>d.totalLeads),
+        backgroundColor: byReg.map((_,i)=>COLORS[i%4]),
+        borderColor:'#1e293b', borderWidth:2
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{color:MUTED,font:{size:11},boxWidth:12,padding:10} },
+        tooltip:{
+          backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,
+          titleColor:'#f1f5f9',bodyColor:MUTED,
+          callbacks:{ label: ctx => {
+            const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+            const pct = total>0?((ctx.parsed/total)*100).toFixed(1):0;
+            return ` ${ctx.label}: ${ctx.parsed} leads (${pct}%)`;
+          }}
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════
+// TABLE
+// ═══════════════════════════════════════════════
+function sortBy(field) {
+  sortCfg = sortCfg.field===field
+    ? { field, dir: sortCfg.dir==='asc'?'desc':'asc' }
+    : { field, dir:'desc' };
+  document.querySelectorAll('th').forEach(th => {
+    const f = th.getAttribute('onclick')?.match(/sortBy\('(\w+)'\)/)?.[1];
+    th.className = f===field ? ('s'+sortCfg.dir[0]) : '';
+  });
+  renderTable();
+}
+
+function renderTable() {
+  const search = document.getElementById('tblSearch').value.toLowerCase();
+  let data = [...tableAgg];
+  if (search) data = data.filter(d=>d.adset.toLowerCase().includes(search)||d.campaign.toLowerCase().includes(search));
+
+  data.sort((a,b) => {
+    const va = a[sortCfg.field] ?? -Infinity;
+    const vb = b[sortCfg.field] ?? -Infinity;
+    if (typeof va==='string') return sortCfg.dir==='asc'?va.localeCompare(vb):vb.localeCompare(va);
+    return sortCfg.dir==='asc' ? va-vb : vb-va;
+  });
+
+  const tbody = document.getElementById('tblBody');
+  if (!data.length) {
+    tbody.innerHTML='<tr><td colspan="11"><div class="empty">Nenhum resultado.</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map(d=>`
+    <tr>
+      <td><span class="badge ${badgeClass(d.region)}">${d.region}</span></td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${d.adset}">${d.adset}</td>
+      <td style="color:var(--muted);font-size:11px">${d.campaign}</td>
+      <td style="color:var(--orange)">${R(d.spend)}</td>
+      <td>${N(d.impressions)}</td>
+      <td>${N(d.clicks)}</td>
+      <td>${P(d.ctr)}</td>
+      <td style="color:var(--green);font-weight:600">${d.formLeads}</td>
+      <td style="color:var(--blue);font-weight:600">${d.msgLeads}</td>
+      <td style="font-weight:700;font-size:14px;color:var(--green)">${d.totalLeads}</td>
+      <td style="color:var(--orange);font-weight:700">${d.cpl?R(d.cpl):'—'}</td>
+    </tr>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════
+// CSV EXPORT
+// ═══════════════════════════════════════════════
+function exportCSV() {
+  if (!tableAgg.length) { alert('Sem dados para exportar. Carregue os dados primeiro.'); return; }
+  const h = ['Região','Conjunto de Anúncios','Campanha','Gasto','Impressões','Cliques','CTR%','Leads Form','Leads Conversa','Leads Total','CPL'];
+  const rows = tableAgg.map(d=>[
+    d.region,`"${d.adset}"`,`"${d.campaign}"`,
+    d.spend.toFixed(2),d.impressions,d.clicks,d.ctr.toFixed(3),
+    d.formLeads,d.msgLeads,d.totalLeads,d.cpl?d.cpl.toFixed(2):''
+  ]);
+  downloadCSV([h,...rows], `hase_leads_${new Date().toISOString().slice(0,10)}.csv`);
+}
+
+function downloadCSV(rows, name) {
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const blob = new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+// SOLAR MARKET CONFIG
+// ═══════════════════════════════════════════════
+const SM_API_BASE    = 'https://business.solarmarket.com.br/api/v2';
+const SM_APIKEY_KEY  = 'hase_sm_apikey';
+const SM_JWT_KEY     = 'hase_sm_jwt';
+const SM_JWT_EXP_KEY = 'hase_sm_jwt_exp';
+const SM_SNAP_KEY    = 'hase_sm_snapshot_v3';
+const SM_CACHE_KEY   = 'hase_sm_cache_v1';
+const SM_CACHE_MAX_MS = 5 * 60 * 1000; // 5 minutos
+
+const SM_FUNIL_COMERCIAL_ID    = 18981;   // Comercial BA
+const SM_FUNIL_COMERCIAL_MG_ID = 19712;  // Comercial MG
+
+// Pattern matching helpers
+const SM_PV_PATTERNS   = ['pré-vend','pre-vend','prévendas','prevendas','pré vendas','pre vendas'];
+const SM_QUALIF_PAT    = ['qualific'];
+const SM_PROPOSTA_PAT  = ['proposta'];
+const SM_FINALIZ_PAT   = ['finaliz'];
+
+// ─── Metas mensais (R$) ────────────────────────────
+const SM_METAS_VENDEDOR = { ailton:200000, elias:100000, gabriel:100000, andre:80000, barbara:80000 };
+const SM_META_MG = 400000, SM_META_BA = 160000, SM_META_GLOBAL = 560000;
+
+// Cidades → estado para mapeamento do CAC
+// MG: Salinas, Montes Claros, Taiobeiras + outras cidades mineiras
+// BA: Porto Seguro + outras cidades baianas
+const SM_CIDADES_MG = ['salinas','montes claros','taiobeiras','capelinha','janauba','januaria','aracuai','araçuaí'];
+const SM_CIDADES_BA = ['porto seguro','eunapolis','itabela','ilheus','porto'];
+function cidadeEstado(nome) {
+  var n = (nome||'').toLowerCase();
+  if (SM_CIDADES_MG.some(function(c){ return n.indexOf(c) !== -1; })) return 'mg';
+  if (SM_CIDADES_BA.some(function(c){ return n.indexOf(c) !== -1; })) return 'ba';
+  return null;
+}
+
+// ─── Auth ────────────────────────────────────────
+async function smAuthenticate() {
+  var jwt    = store.get(SM_JWT_KEY);
+  var jwtExp = store.get(SM_JWT_EXP_KEY);
+  if (jwt && jwtExp && new Date(jwtExp) > new Date()) return jwt;
+
+  // Signin server-side: a apiKey nunca vem pro browser
+  var resp = await fetch('/sm-signin', { method: 'POST' });
+  var data = await resp.json();
+  if (!data.ok || !data.access_token) {
+    if (data.error === 'no_apikey') throw new Error('SM_NO_KEY');
+    throw new Error('SM auth: ' + (data.error || 'unknown'));
+  }
+
+  var exp = new Date(); exp.setMinutes(exp.getMinutes() + 330); // 5.5h
+  store.set(SM_JWT_KEY, data.access_token);
+  store.set(SM_JWT_EXP_KEY, exp.toISOString());
+  return data.access_token;
+}
+
+async function smGet(jwt, path) {
+  var resp = await fetch(SM_API_BASE + path, {headers:{'Authorization':'Bearer '+jwt}});
+  if (resp.status === 401) { store.set(SM_JWT_KEY,''); throw new Error('SM_UNAUTHORIZED'); }
+  return resp.json();
+}
+
+// ─── Modal ────────────────────────────────────────
+function openSmModal() {
+  var m = document.getElementById('smModal');
+  if (m) m.style.display = 'flex';
+}
+function closeSmModal() {
+  var m = document.getElementById('smModal');
+  if (m) m.style.display = 'none';
+}
+function saveSmToken() {
+  var v = document.getElementById('smTokenInput').value.trim();
+  if (v && v.length > 5) {
+    // Persiste só no servidor (apiKey nunca fica no browser)
+    store.set(SM_APIKEY_KEY, '__server__');
+    store.set(SM_JWT_KEY, '');
+    store.set(SM_JWT_EXP_KEY, '');
+    saveConfig({ smApiKey: v });
+  }
+  closeSmModal();
+  loadSmData();
+}
+
+// ─── Status ────────────────────────────────────────
+function smSetStatus(type, msg) {
+  var dot = document.getElementById('smDot');
+  var txt = document.getElementById('smStatusTxt');
+  if (!dot || !txt) return;
+  dot.className = 'sm-dot ' + type;
+  txt.textContent = msg;
+}
+
+// ─── Tab nav ────────────────────────────────────────
+function smSelectTab(name, btn) {
+  document.querySelectorAll('.sm-tab').forEach(function(b){ b.classList.remove('on'); });
+  document.querySelectorAll('.sm-tab-panel').forEach(function(p){ p.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  var panel = document.getElementById('smTab-' + name);
+  if (panel) panel.classList.add('on');
+}
+
+// ─── Snapshot system v3 ────────────────────────────────────────
+// Schema: snap[projectId] = { pv: { stageId: {n, at} }, cm: { stageId: {n, at} } }
+// Persistência: localStorage (cache local) + /snapshot no servidor (fonte da verdade)
+
+function smMergeSnaps(base, incoming) {
+  // Mantém sempre o timestamp MAIS ANTIGO para cada entrada — nunca perdemos o primeiro evento
+  var result = {};
+  function copyIn(src) {
+    Object.keys(src).forEach(function(pid) {
+      if (!result[pid]) result[pid] = {};
+      Object.keys(src[pid]).forEach(function(fk) {
+        if (!result[pid][fk]) result[pid][fk] = {};
+        Object.keys(src[pid][fk]).forEach(function(sid) {
+          var inc = src[pid][fk][sid];
+          var cur = result[pid][fk][sid];
+          if (!cur || inc.at < cur.at) result[pid][fk][sid] = inc;
+        });
+      });
+    });
+  }
+  copyIn(base);
+  copyIn(incoming);
+  return result;
+}
+
+function smGetSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SM_SNAP_KEY) || '{}'); } catch(e) { return {}; }
+}
+
+function smSaveSnapshot(snap) {
+  // 1. Salva no localStorage (imediato)
+  try { localStorage.setItem(SM_SNAP_KEY, JSON.stringify(snap)); } catch(e) {}
+  // 2. Persiste no servidor (assíncrono, silencioso se offline)
+  try {
+    fetch('/snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(snap)
+    }).catch(function() {});
+  } catch(e) {}
+}
+
+async function smLoadSnapshotFromServer() {
+  // Carrega snapshot do servidor e faz merge com localStorage
+  // O servidor é a fonte da verdade — tem o histórico completo mesmo se localStorage foi limpo
+  try {
+    var resp = await fetch('/snapshot');
+    if (!resp.ok) return;
+    var serverSnap = await resp.json();
+    if (!serverSnap || typeof serverSnap !== 'object') return;
+    var localSnap = smGetSnapshot();
+    var merged = smMergeSnaps(serverSnap, localSnap);
+    // Salva o merge no localStorage (atualiza cache local com dados do servidor)
+    try { localStorage.setItem(SM_SNAP_KEY, JSON.stringify(merged)); } catch(e) {}
+  } catch(e) {
+    // Silencioso — pode estar em file:// sem servidor
+  }
+}
+
+async function smExportEventsCSV() {
+  // Baixa o log de eventos do servidor e converte para CSV
+  try {
+    var resp = await fetch('/events');
+    if (!resp.ok) { alert('Erro ao carregar log de eventos do servidor.'); return; }
+    var events = await resp.json();
+    if (!events.length) { alert('Nenhum evento registrado ainda.'); return; }
+    var header = ['lead_id','funil','etapa_id','etapa_nome','data_entrada'];
+    var rows = events.map(function(e) {
+      var dt = e.at ? e.at.slice(0,19).replace('T',' ') : '';
+      return [e.pid, e.fk, e.sid, '"'+(e.n||'').replace(/"/g,'""')+'"', dt];
+    });
+    var csv = [header, ...rows].map(function(r){ return r.join(';'); }).join('\n');
+    var blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'hase_leads_eventos_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
+  } catch(e) {
+    // Fallback: exporta do localStorage se sem servidor
+    var snap = smGetSnapshot();
+    var rows = [['lead_id','funil','etapa_id','etapa_nome','data_entrada']];
+    Object.keys(snap).forEach(function(pid){
+      Object.keys(snap[pid]).forEach(function(fk){
+        Object.keys(snap[pid][fk]).forEach(function(sid){
+          var en = snap[pid][fk][sid];
+          var dt = en.at ? en.at.slice(0,19).replace('T',' ') : '';
+          rows.push([pid, fk, sid, '"'+(en.n||'').replace(/"/g,'""')+'"', dt]);
+        });
+      });
+    });
+    var csv = rows.map(function(r){ return r.join(';'); }).join('\n');
+    var blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'hase_leads_eventos_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
+  }
+}
+
+// In-memory update (call smSaveSnapshot once at end of batch)
+function smUpdateSnap(snap, projectId, funnelKey, stageId, stageName, today) {
+  var pid = String(projectId);
+  var sid = String(stageId);
+  if (!snap[pid]) snap[pid] = {};
+  if (!snap[pid][funnelKey]) snap[pid][funnelKey] = {};
+  if (!snap[pid][funnelKey][sid]) {
+    snap[pid][funnelKey][sid] = { n: stageName, at: today };
+  }
+}
+
+// ─── Stage pattern matchers ────────────────────────────────────────
+function smMatchPat(name, pats) {
+  var n = (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return pats.some(function(p){ return n.indexOf(p) !== -1; });
+}
+function isPreVendasFunnel(f) {
+  return smMatchPat(f.name || '', SM_PV_PATTERNS);
+}
+function isComercialFunnel(f) {
+  return f.id === SM_FUNIL_COMERCIAL_ID || f.id === SM_FUNIL_COMERCIAL_MG_ID;
+}
+function getFunnelRegion(f) {
+  // region from funnel name tag or by ID
+  var n = (f.name || '').toLowerCase();
+  if (/\bmg\b/.test(n) || n.indexOf('minas') !== -1) return 'mg';
+  if (/\bba\b/.test(n) || n.indexOf('bahia') !== -1) return 'ba';
+  if (f.id === SM_FUNIL_COMERCIAL_MG_ID) return 'mg';
+  if (f.id === SM_FUNIL_COMERCIAL_ID)    return 'ba';
+  return 'ba'; // default
+}
+
+// ─── Core data loader ────────────────────────────────────────
+// chart instances declared in smRenderCharts
+
+function smGetCache() {
+  try {
+    var c = JSON.parse(localStorage.getItem(SM_CACHE_KEY) || 'null');
+    if (!c || !c.enriched || !c.ts) return null;
+    return c;
+  } catch(e) { return null; }
+}
+function smSetCache(enriched, periodAfter, periodBefore) {
+  try {
+    localStorage.setItem(SM_CACHE_KEY, JSON.stringify({
+      enriched: enriched,
+      periodAfter: periodAfter,
+      periodBefore: periodBefore,
+      ts: Date.now()
+    }));
+  } catch(e) {}
+}
+
+async function loadSmData() {
+  var apiKey = store.get(SM_APIKEY_KEY);
+  if (!apiKey) {
+    document.getElementById('smSetup').style.display = 'block';
+    document.getElementById('smContent').style.display = 'none';
+    smSetStatus('', 'Não configurado');
+    return;
+  }
+
+  document.getElementById('smSetup').style.display = 'none';
+
+  // Exibe cache imediatamente se existir (< 5 min)
+  var cached = smGetCache();
+  if (cached) {
+    document.getElementById('smContent').style.display = 'block';
+    smRenderAll(cached.enriched, new Date(cached.periodAfter), new Date(cached.periodBefore));
+    smSetStatus('ok', cached.enriched.length + ' no funil · cache ' + new Date(cached.ts).toLocaleTimeString('pt-BR') + ' · atualizando...');
+  } else {
+    smSetStatus('load', 'Carregando...');
+  }
+
+  try {
+    var jwt = await smAuthenticate();
+
+    // Guarda o período selecionado para usar nos KPIs de "novos leads"
+    var range = smGetDateRange();
+    var periodAfter  = new Date(range.since + 'T00:00:00.000Z');
+    var periodBefore = new Date(range.until + 'T23:59:59.000Z');
+
+    // Carrega TODOS os projetos (sem filtro de data) — necessário para ver
+    // leads criados antes do período mas ainda ativos no funil comercial
+    smSetStatus('load', 'Carregando projetos...');
+    var projects = [];
+    var page = 1;
+    while (true) {
+      var d = await smGet(jwt, '/projects?limit=100&page='+page);
+      projects = projects.concat(d.data || []);
+      if (page >= (d.pagination ? d.pagination.totalPages : 1)) break;
+      page++;
+      smSetStatus('load', 'Carregando projetos... ' + projects.length);
+    }
+
+    if (projects.length === 0) {
+      document.getElementById('smContent').style.display = 'block';
+      smRenderAll([], periodAfter, periodBefore);
+      smSetStatus('ok', '0 projetos encontrados');
+      return;
+    }
+
+    // Busca funis em lotes de 30 para não sobrecarregar a API
+    smSetStatus('load', 'Buscando funis (' + projects.length + ' projetos)...');
+    var funnelResults = new Array(projects.length).fill({data:[]});
+    var BATCH = 30;
+    for (var bi = 0; bi < projects.length; bi += BATCH) {
+      var batch = projects.slice(bi, bi + BATCH);
+      var batchResults = await Promise.all(
+        batch.map(function(p) {
+          return smGet(jwt, '/projects/'+p.id+'/funnels').catch(function(){ return {data:[]}; });
+        })
+      );
+      batchResults.forEach(function(r, ri) { funnelResults[bi + ri] = r; });
+    }
+
+    // Busca propostas apenas para projetos no Comercial (em lotes)
+    smSetStatus('load', 'Buscando propostas...');
+    var proposalResults = new Array(projects.length).fill({data:null});
+    var comercialIdxs = [];
+    projects.forEach(function(p, i) {
+      var funnels = (funnelResults[i] && funnelResults[i].data) || [];
+      if (funnels.some(isComercialFunnel)) comercialIdxs.push(i);
+    });
+    for (var bi = 0; bi < comercialIdxs.length; bi += BATCH) {
+      var batchIdxs = comercialIdxs.slice(bi, bi + BATCH);
+      var batchResults = await Promise.all(
+        batchIdxs.map(function(i) {
+          return smGet(jwt, '/projects/'+projects[i].id+'/proposals').catch(function(){ return {data:null}; });
+        })
+      );
+      batchResults.forEach(function(r, ri) { proposalResults[batchIdxs[ri]] = r; });
+    }
+
+    var today = new Date().toISOString();
+    var snap  = smGetSnapshot();
+
+    // Enrich projects
+    var enriched = projects.map(function(p, i) {
+      var funnels  = (funnelResults[i] && funnelResults[i].data) || [];
+      var proposal = (proposalResults[i] && proposalResults[i].data) || null;
+
+      // Find Pré-Vendas and Comercial funnels
+      var pvFunnel = funnels.find(isPreVendasFunnel) || null;
+      var cmFunnel = funnels.find(isComercialFunnel) || null;
+
+      // Must be in at least one of them
+      if (!pvFunnel && !cmFunnel) return null;
+
+      // Region: prefer CM funnel for detection, fallback to PV
+      var regionFunnel = cmFunnel || pvFunnel;
+      var region       = getFunnelRegion(regionFunnel);
+      var funelType    = region; // 'ba' | 'mg'
+
+      var pid = String(p.id);
+
+      // ── Pré-Vendas stage flags ──
+      var leadRecebido     = !!pvFunnel;
+      var leadQualificado  = false;
+      var leadQualificadoAt = null;
+      var pvStageName = '';
+      var pvResponsible = '';
+
+      if (pvFunnel) {
+        pvResponsible = (pvFunnel.responsible && pvFunnel.responsible.name) || (p.responsible && p.responsible.name) || 'N/A';
+        var pvStage = pvFunnel.stage || {};
+        pvStageName = pvStage.name || '';
+        // Record current pv stage in snapshot
+        if (pvStage.id) smUpdateSnap(snap, p.id, 'pv', pvStage.id, pvStageName, today);
+        // Check snapshot for any qualificado stage ever
+        var pvSnap = (snap[pid] && snap[pid]['pv']) || {};
+        Object.keys(pvSnap).forEach(function(sid) {
+          var sn = pvSnap[sid];
+          if (smMatchPat(sn.n || '', SM_QUALIF_PAT)) {
+            leadQualificado = true;
+            if (!leadQualificadoAt || sn.at < leadQualificadoAt) leadQualificadoAt = sn.at;
+          }
+        });
+        // Also check current stage
+        if (!leadQualificado && smMatchPat(pvStageName, SM_QUALIF_PAT)) {
+          leadQualificado = true;
+          leadQualificadoAt = today;
+        }
+      }
+
+      // ── Comercial stage flags ──
+      var propostEnviada   = false;
+      var propostEnviadaAt = null;
+      var finalizado       = false;
+      var finalizadoAt     = null;
+      var salesValue       = 0;
+      var cmStageName      = '';
+      var cmResponsible    = '';
+      var daysToFinalizado = null;
+
+      if (cmFunnel) {
+        cmResponsible = (cmFunnel.responsible && cmFunnel.responsible.name) || (p.responsible && p.responsible.name) || 'N/A';
+        var cmStage = cmFunnel.stage || {};
+        cmStageName = cmStage.name || '';
+        if (cmStage.id) smUpdateSnap(snap, p.id, 'cm', cmStage.id, cmStageName, today);
+
+        var cmSnap = (snap[pid] && snap[pid]['cm']) || {};
+        // Snapshot: registra histórico de proposta E finalizado.
+        // SM_FINALIZ_PAT = ['finaliz'] (restrito) evita falsos positivos.
+        // A data gravada é a PRIMEIRA vez que o lead apareceu nessa etapa,
+        // preservando o histórico mesmo após limpeza mensal da coluna.
+        Object.keys(cmSnap).forEach(function(sid) {
+          var sn = cmSnap[sid];
+          if (smMatchPat(sn.n || '', SM_PROPOSTA_PAT)) {
+            propostEnviada = true;
+            if (!propostEnviadaAt || sn.at < propostEnviadaAt) propostEnviadaAt = sn.at;
+          }
+          if (smMatchPat(sn.n || '', SM_FINALIZ_PAT)) {
+            finalizado = true;
+            if (!finalizadoAt || sn.at < finalizadoAt) finalizadoAt = sn.at;
+          }
+        });
+        if (!propostEnviada && smMatchPat(cmStageName, SM_PROPOSTA_PAT)) {
+          propostEnviada = true; propostEnviadaAt = today;
+        }
+        // Etapa atual + wonAt substituem o snapshot se a data for mais precisa
+        if (smMatchPat(cmStageName, SM_FINALIZ_PAT)) {
+          finalizado = true;
+          var wonDate = cmFunnel.wonAt || finalizadoAt || today;
+          if (!finalizadoAt || wonDate < finalizadoAt) finalizadoAt = wonDate;
+        }
+        if (cmFunnel.status === 'won' && cmFunnel.wonAt) {
+          finalizado = true;
+          if (!finalizadoAt || cmFunnel.wonAt < finalizadoAt) finalizadoAt = cmFunnel.wonAt;
+        }
+
+        // Valor: usa p.value do card (valor exibido no SM), fallback para pricingTable
+        salesValue = parseFloat(p.value) || 0;
+        if (!salesValue && proposal && proposal.pricingTable) {
+          salesValue = proposal.pricingTable.reduce(function(s,item){ return s + (item.salesValue||0); }, 0);
+        }
+
+        if (finalizadoAt) {
+          daysToFinalizado = Math.max(0, Math.floor((new Date(finalizadoAt) - new Date(p.createdAt)) / 86400000));
+        }
+      }
+
+      var daysFromCreation = Math.floor((new Date() - new Date(p.createdAt)) / 86400000);
+
+      // Primary responsible: CM if exists, else PV
+      var responsible = cmResponsible || pvResponsible || 'N/A';
+
+      return {
+        id: p.id, name: p.name, createdAt: p.createdAt,
+        funelType, region: region === 'ba' ? 'Bahia' : 'Minas Gerais',
+        responsible, pvResponsible, cmResponsible,
+        inPreVendas: !!pvFunnel, inComercial: !!cmFunnel,
+        leadRecebido, leadQualificado, leadQualificadoAt,
+        propostEnviada, propostEnviadaAt,
+        finalizado, finalizadoAt,
+        salesValue, daysFromCreation, daysToFinalizado,
+        pvStageName, cmStageName,
+        // legacy compat
+        convertido: finalizado, convertedAt: finalizadoAt,
+        negAvancada: propostEnviada, stageOrder: propostEnviada ? 3 : 0
+      };
+    }).filter(Boolean);
+
+    // Save snapshot once after processing all projects
+    smSaveSnapshot(snap);
+
+    // Show note if snapshot was empty before this run (first time)
+    var snapWasEmpty = Object.keys(smGetSnapshot()).length === 0;
+    var note = document.getElementById('smSnapshotNote');
+    if (note) note.style.display = snapWasEmpty ? 'block' : 'none';
+
+    smSetCache(enriched, periodAfter.toISOString(), periodBefore.toISOString());
+    document.getElementById('smContent').style.display = 'block';
+    smRenderAll(enriched, periodAfter, periodBefore);
+    smSetStatus('ok', enriched.length + ' no funil comercial · atualizado ' + new Date().toLocaleTimeString('pt-BR'));
+
+  } catch (e) {
+    if (e.message === 'SM_NO_KEY') {
+      document.getElementById('smSetup').style.display = 'block';
+      document.getElementById('smContent').style.display = 'none';
+      smSetStatus('', 'Não configurado');
+    } else {
+      smSetStatus('err', 'Erro: ' + e.message);
+      console.error('Solar Market:', e);
+    }
+  }
+}
+
+// ─── Helpers ────────────────────────────────────────
+function getDateRange() {
+  var from = document.getElementById('dateFrom').value;
+  var to   = document.getElementById('dateTo').value;
+  if (from && to) return {since: from, until: to};
+  // Fallback from activePreset
+  var today = new Date();
+  function fmt(d){ return d.toISOString().slice(0,10); }
+  if (activePreset === 'today')       return {since: fmt(today), until: fmt(today)};
+  if (activePreset === 'yesterday')   { var y=new Date(today); y.setDate(y.getDate()-1); return {since:fmt(y),until:fmt(y)}; }
+  if (activePreset === 'last_7d')     { var s=new Date(today); s.setDate(s.getDate()-6); return {since:fmt(s),until:fmt(today)}; }
+  if (activePreset === 'this_month')  { var s=new Date(today.getFullYear(),today.getMonth(),1); return {since:fmt(s),until:fmt(today)}; }
+  if (activePreset === 'last_month')  { var lm=new Date(today.getFullYear(),today.getMonth()-1,1); var le=new Date(today.getFullYear(),today.getMonth(),0); return {since:fmt(lm),until:fmt(le)}; }
+  // Default: last 30 days
+  var s = new Date(today); s.setDate(s.getDate()-29);
+  return {since: fmt(s), until: fmt(today)};
+}
+
+// ─── Filtro de período exclusivo do Funil Comercial ─────────────────────────
+function smGetDateRange() {
+  var from = document.getElementById('smDateFrom') && document.getElementById('smDateFrom').value;
+  var to   = document.getElementById('smDateTo')   && document.getElementById('smDateTo').value;
+  if (from && to) return {since: from, until: to};
+  var today = new Date();
+  function fmt(d){ return d.toISOString().slice(0,10); }
+  if (smActivePreset === 'today')       return {since: fmt(today), until: fmt(today)};
+  if (smActivePreset === 'yesterday')   { var y=new Date(today); y.setDate(y.getDate()-1); return {since:fmt(y),until:fmt(y)}; }
+  if (smActivePreset === 'last_7d')     { var s=new Date(today); s.setDate(s.getDate()-6); return {since:fmt(s),until:fmt(today)}; }
+  if (smActivePreset === 'this_month')  { var s=new Date(today.getFullYear(),today.getMonth(),1); return {since:fmt(s),until:fmt(today)}; }
+  if (smActivePreset === 'last_month')  { var lm=new Date(today.getFullYear(),today.getMonth()-1,1); var le=new Date(today.getFullYear(),today.getMonth(),0); return {since:fmt(lm),until:fmt(le)}; }
+  var s = new Date(today); s.setDate(s.getDate()-29);
+  return {since: fmt(s), until: fmt(today)};
+}
+function smSetPreset(preset, el) {
+  smActivePreset = preset;
+  var df = document.getElementById('smDateFrom'); if(df) df.value = '';
+  var dt = document.getElementById('smDateTo');   if(dt) dt.value = '';
+  document.querySelectorAll('.sm-p-btn').forEach(function(b){ b.classList.remove('on'); });
+  if (el) el.classList.add('on');
+  loadSmData();
+}
+function smSetCustomDate() {
+  var from = document.getElementById('smDateFrom').value;
+  var to   = document.getElementById('smDateTo').value;
+  if (from && to && from <= to) {
+    smActivePreset = null;
+    document.querySelectorAll('.sm-p-btn').forEach(function(b){ b.classList.remove('on'); });
+    loadSmData();
+  }
+}
+
+// ─── Render ────────────────────────────────────────
+var smChartTempo = null, smChartFunnel = null;
+
+var fmtBRL = function(v){ return v > 0 ? 'R$\u00a0' + Math.round(v).toLocaleString('pt-BR') : '—'; };
+var fmtPct = function(n,d){ return d > 0 ? Math.round(n/d*100)+'%' : '—'; };
+var fmtBRLc = function(v){ // formato compacto para pipeline
+  if (!v || v <= 0) return '—';
+  if (v >= 1000000) return 'R$\u00a0' + (v/1000000).toFixed(1).replace('.',',') + 'M';
+  if (v >= 1000) return 'R$\u00a0' + Math.round(v/1000) + 'k';
+  return 'R$\u00a0' + Math.round(v);
+};
+function smNormName(name) {
+  return (name||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(' ')[0].trim();
+}
+function smGetMeta(name) { return SM_METAS_VENDEDOR[smNormName(name)] || null; }
+function smForecast(realizado, periodAfter, periodBefore) {
+  var now = new Date();
+  var end = new Date(periodBefore);
+  if (now > end) return null; // período já encerrado
+  var start = new Date(periodAfter);
+  var total = (end - start) / 86400000 + 1;
+  var elapsed = Math.max(1, (now - start) / 86400000 + 1);
+  var pct = elapsed / total;
+  if (pct <= 0.02) return null; // menos de 2% do período — muito cedo
+  return realizado / pct;
+}
+
+function smAvgDaysFin(items) {
+  var valid = items.filter(function(e){ return e.daysToFinalizado !== null && e.daysToFinalizado >= 0; });
+  if (!valid.length) return null;
+  return Math.round(valid.reduce(function(s,e){ return s+e.daysToFinalizado; },0)/valid.length);
+}
+function smAvgDaysTo(items, dateField) {
+  var valid = items.filter(function(e){ return e[dateField] && e.createdAt; });
+  if (!valid.length) return null;
+  var total = valid.reduce(function(s,e){
+    return s + Math.max(0, Math.floor((new Date(e[dateField]) - new Date(e.createdAt)) / 86400000));
+  }, 0);
+  return Math.round(total / valid.length);
+}
+
+// ── Pipeline horizontal ──────────────────────────────────────
+function smPipeStep(icon, lbl, val, sub, rate, extraCls) {
+  return '<div class="sm-pipe-step '+(extraCls||'')+'">'
+    +'<div class="sm-pipe-step-icon">'+icon+'</div>'
+    +'<div class="sm-pipe-step-lbl">'+lbl+'</div>'
+    +'<div class="sm-pipe-step-val">'+val+'</div>'
+    +'<div class="sm-pipe-step-sub">'+sub+'</div>'
+    +'<div class="sm-pipe-step-rate">'+rate+'</div>'
+    +'</div>';
+}
+function smPipeArrow() { return '<div class="sm-pipe-arrow">›</div>'; }
+
+function smRenderPipeline(containerId, data, periodAfter, periodBefore) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var total    = data.length;
+  var recvArr  = data.filter(function(e){ return e.leadRecebido; });
+  var qualArr  = data.filter(function(e){ return e.leadQualificado; });
+  var propArr  = data.filter(function(e){ return e.propostEnviada; });
+  var finArr   = data.filter(function(e){ return e.finalizado; });
+
+  // Valor potencial de cada etapa
+  var recvVal  = recvArr.reduce(function(s,e){ return s+(e.salesValue||0); },0);
+  var qualVal  = qualArr.reduce(function(s,e){ return s+(e.salesValue||0); },0);
+  var propVal  = propArr.reduce(function(s,e){ return s+(e.salesValue||0); },0);
+
+  // Finalizado: filtro pelo período selecionado
+  var finPeriod = finArr;
+  if (periodAfter && periodBefore) {
+    finPeriod = finArr.filter(function(e){
+      if (!e.finalizadoAt) return false;
+      var d = new Date(e.finalizadoAt);
+      return d >= periodAfter && d <= periodBefore;
+    });
+  }
+  var finVal = finPeriod.reduce(function(s,e){ return s+(e.salesValue||0); },0);
+
+  el.innerHTML = '<div class="sm-pipeline">'
+    + smPipeStep('📥','Lead Recebido', recvArr.length, fmtBRLc(recvVal), 'total: '+total, 'pv')
+    + smPipeArrow()
+    + smPipeStep('✅','Lead Qualificado', qualArr.length, fmtBRLc(qualVal), fmtPct(qualArr.length,recvArr.length)+' dos recebidos', 'pv')
+    + smPipeArrow()
+    + smPipeStep('📄','Proposta Enviada', propArr.length, fmtBRLc(propVal), fmtPct(propArr.length,qualArr.length)+' dos qualificados', 'cm')
+    + smPipeArrow()
+    + smPipeStep('🏆','Finalizado', finPeriod.length, fmtBRLc(finVal), fmtPct(finPeriod.length,propArr.length)+' das propostas', 'fin')
+    + '</div>';
+}
+
+// ── KPI cards ──────────────────────────────────────
+function smRenderKpis(containerId, data, periodAfter, periodBefore) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var inPeriod = data.filter(function(e){
+    var d = new Date(e.createdAt); return d >= periodAfter && d <= periodBefore;
+  }).length;
+  var inPV = data.filter(function(e){ return e.inPreVendas; }).length;
+  var inCM = data.filter(function(e){ return e.inComercial; }).length;
+  // Finalizado e Faturamento filtrados pela data de entrada na coluna Finalizado
+  var finInPeriod = data.filter(function(e){
+    if (!e.finalizado || !e.finalizadoAt) return false;
+    var d = new Date(e.finalizadoAt); return d >= periodAfter && d <= periodBefore;
+  });
+  var fin      = finInPeriod.length;
+  var totalFat = finInPeriod.reduce(function(s,e){ return s + (e.salesValue||0); }, 0);
+  var ticket   = fin > 0 && totalFat > 0 ? totalFat / fin : 0;
+  var ciclo    = smAvgDaysFin(finInPeriod);
+
+  var forecast = smForecast(totalFat, periodAfter, periodBefore);
+  var kpis = [
+    {lbl:'No Período', val:inPeriod, cls:'b'},
+    {lbl:'Em Pré-Vendas', val:inPV, cls:'p'},
+    {lbl:'Em Comercial', val:inCM, cls:'b'},
+    {lbl:'Finalizados', val:fin, cls:'g'},
+    {lbl:'Faturamento', val:fmtBRL(totalFat), cls:'g'},
+    {lbl:'Projeção Período', val:forecast ? fmtBRL(forecast) : '—', cls:'o'},
+    {lbl:'Ticket Médio', val:ticket > 0 ? fmtBRL(ticket) : '—', cls:'g'},
+    {lbl:'Ciclo Médio', val:ciclo !== null ? ciclo+'d' : '—', cls:'p'}
+  ];
+  el.innerHTML = kpis.map(function(k){
+    return '<div class="sm-kpi"><div class="sm-kpi-lbl">'+k.lbl+'</div><div class="sm-kpi-val '+k.cls+'">'+k.val+'</div></div>';
+  }).join('');
+}
+
+// ── Vendedor table (dual attribution) ──────────────────────────────────────
+function smRenderVendedorTable(tbodyId, data, showRegion, periodAfter, periodBefore) {
+  var el = document.getElementById(tbodyId);
+  if (!el) return;
+
+  // Pré-computa região autoritativa de cada vendedor a partir do funil COMERCIAL.
+  // MG prevalece sobre BA: se o vendedor tem qualquer lead no funil MG, ele é MG.
+  var cmRegions = {};
+  data.forEach(function(e) {
+    if (!e.cmResponsible) return;
+    var n = e.cmResponsible;
+    if (!cmRegions[n] || e.funelType === 'mg') cmRegions[n] = e.funelType || 'ba';
+  });
+
+  var persons = {};
+  function ensurePerson(name, fallbackRegion) {
+    if (!persons[name]) persons[name] = {
+      name: name,
+      region: cmRegions[name] || fallbackRegion || 'ba',
+      pvLeads:0, pvQualif:0,
+      cmProposta:0, cmFin:0, totalVal:0, totalDays:0, daysCount:0
+    };
+    return persons[name];
+  }
+  data.forEach(function(e) {
+    if (e.pvResponsible) {
+      var g = ensurePerson(e.pvResponsible, e.region);
+      if (e.leadRecebido)    g.pvLeads++;
+      if (e.leadQualificado) g.pvQualif++;
+    }
+    if (e.cmResponsible) {
+      var g = ensurePerson(e.cmResponsible, e.region);
+      if (e.propostEnviada) g.cmProposta++;
+      if (e.finalizado) {
+        // Conta fechamento e faturamento apenas se finalizadoAt cai dentro do período
+        var finDate = e.finalizadoAt ? new Date(e.finalizadoAt) : null;
+        if (finDate && periodAfter && periodBefore && finDate >= periodAfter && finDate <= periodBefore) {
+          g.cmFin++;
+          g.totalVal += e.salesValue || 0;
+          if (e.daysToFinalizado !== null) { g.totalDays += e.daysToFinalizado; g.daysCount++; }
+        }
+      }
+    }
+  });
+
+  var rows = Object.values(persons).sort(function(a,b){ return b.cmFin - a.cmFin; });
+  if (!rows.length) { el.innerHTML = '<tr><td colspan="12" class="empty">Nenhum dado</td></tr>'; return; }
+
+  el.innerHTML = rows.map(function(g) {
+    var ticket  = g.cmFin > 0 && g.totalVal > 0 ? g.totalVal / g.cmFin : 0;
+    var ciclo   = g.daysCount > 0 ? Math.round(g.totalDays/g.daysCount) : null;
+    var rb = g.region === 'mg' ? '<span class="badge bs">MG</span>' : '<span class="badge bp">BA</span>';
+    return '<tr>'
+      +(showRegion ? '<td>'+rb+'</td>' : '')
+      +'<td>'+g.name+'</td>'
+      +'<td>'+g.pvLeads+'</td>'
+      +'<td>'+g.pvQualif+'</td>'
+      +'<td>'+fmtPct(g.pvQualif, g.pvLeads)+'</td>'
+      +'<td>'+g.cmProposta+'</td>'
+      +'<td>'+fmtPct(g.cmProposta, g.pvLeads)+'</td>'
+      +'<td><strong style="color:var(--green)">'+g.cmFin+'</strong></td>'
+      +'<td>'+fmtPct(g.cmFin, g.cmProposta)+'</td>'
+      +'<td>'+(g.totalVal > 0 ? fmtBRL(g.totalVal) : '—')+'</td>'
+      +'<td>'+fmtBRL(ticket)+'</td>'
+      +'<td>'+(ciclo !== null ? ciclo+'d' : '—')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+// ── Insights ──────────────────────────────────────
+function smInsightCard(lbl, val, sub, cls) {
+  return '<div class="sm-insight-card">'
+    +'<div class="sm-insight-card-lbl">'+lbl+'</div>'
+    +'<div class="sm-insight-card-val '+(cls||'')+'">'+val+'</div>'
+    +'<div class="sm-insight-card-sub">'+sub+'</div>'
+    +'</div>';
+}
+
+function smRenderInsights(containerId, data, periodAfter, periodBefore) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+
+  function inFinPeriod(e) {
+    if (!e.finalizado || !e.finalizadoAt) return false;
+    var d = new Date(e.finalizadoAt);
+    return (!periodAfter || d >= periodAfter) && (!periodBefore || d <= periodBefore);
+  }
+
+  var total    = data.length;
+  var fin      = data.filter(inFinPeriod);
+  var proposta = data.filter(function(e){ return e.propostEnviada; });
+  var qualif   = data.filter(function(e){ return e.leadQualificado; });
+  var ba       = data.filter(function(e){ return e.funelType === 'ba'; });
+  var mg       = data.filter(function(e){ return e.funelType === 'mg'; });
+  var baFin    = ba.filter(inFinPeriod);
+  var mgFin    = mg.filter(inFinPeriod);
+  var totalFat = fin.reduce(function(s,e){ return s + (e.salesValue||0); }, 0);
+
+  // Conversion funnel rates
+  var pvToCm   = fmtPct(data.filter(function(e){ return e.inComercial; }).length, data.filter(function(e){ return e.inPreVendas; }).length);
+  var qualifRate = fmtPct(qualif.length, total);
+  var propostaRate = fmtPct(proposta.length, qualif.length);
+  var finRate  = fmtPct(fin.length, proposta.length);
+  var ciclo    = smAvgDaysFin(fin);
+  var baRate   = fmtPct(baFin.length, ba.length);
+  var mgRate   = fmtPct(mgFin.length, mg.length);
+
+  var html = '<div class="sm-insight-list">';
+  html += smInsightCard('Taxa PV → Comercial', pvToCm, 'leads que avançaram ao comercial', 'b');
+  html += smInsightCard('Taxa de Qualificação', qualifRate, 'leads qualificados / total recebidos', 'p');
+  html += smInsightCard('Taxa Proposta / Qualificado', propostaRate, 'propostas / leads qualificados', 'b');
+  html += smInsightCard('Taxa de Fechamento', finRate, 'finalizados / propostas enviadas', 'g');
+  html += smInsightCard('Ciclo Médio', ciclo !== null ? ciclo+'d' : '—', 'da criação ao fechamento', 'p');
+  html += smInsightCard('Faturamento Total', fmtBRL(totalFat), 'soma de todos os fechamentos', 'g');
+  html += smInsightCard('Fechamentos BA', baFin.length + ' ('+baRate+')', 'total pipeline BA: '+ba.length, '');
+  html += smInsightCard('Fechamentos MG', mgFin.length + ' ('+mgRate+')', 'total pipeline MG: '+mg.length, '');
+  html += '</div>';
+
+  // Top closers
+  var closers = {};
+  fin.forEach(function(e){
+    var n = e.cmResponsible || e.responsible;
+    if (!closers[n]) closers[n] = 0;
+    closers[n]++;
+  });
+  var sorted = Object.keys(closers).sort(function(a,b){ return closers[b]-closers[a]; }).slice(0,5);
+  if (sorted.length) {
+    html += '<div class="chart-card"><div class="chart-head"><div><div class="chart-title">🏅 Top Fechamentos por Vendedor</div></div></div>'
+      +'<div class="sm-table-wrap"><table><thead><tr><th>#</th><th>Vendedor</th><th>Fechamentos</th></tr></thead><tbody>'
+      + sorted.map(function(n,i){ return '<tr><td>'+(i+1)+'</td><td>'+n+'</td><td><strong style="color:var(--green)">'+closers[n]+'</strong></td></tr>'; }).join('')
+      +'</tbody></table></div></div>';
+  }
+
+  el.innerHTML = html;
+
+  // Renderiza histórico após inserir o HTML
+  var rendered = smRenderHistorico(data);
+  var histCard = document.getElementById('smHistoricoCard');
+  if (histCard) histCard.style.display = rendered ? 'block' : 'none';
+}
+
+// ── Charts ──────────────────────────────────────
+function smRenderCharts(data) {
+  if (!window._chartJsLoaded || !window.Chart) return;
+
+  // Funnel distribution: PV-only, CM, Both
+  var pvOnly = data.filter(function(e){ return e.inPreVendas && !e.inComercial; }).length;
+  var cmOnly = data.filter(function(e){ return !e.inPreVendas && e.inComercial; }).length;
+  var both   = data.filter(function(e){ return e.inPreVendas && e.inComercial; }).length;
+
+  var ctxF = document.getElementById('smChartFunnel');
+  if (ctxF) {
+    if (smChartFunnel) smChartFunnel.destroy();
+    smChartFunnel = new Chart(ctxF, {
+      type: 'doughnut',
+      data: { labels: ['Só Pré-Vendas','Só Comercial','Ambos'], datasets: [{ data:[pvOnly,cmOnly,both], backgroundColor:['#a78bfa','#3b82f6','#10b981'] }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'right', labels:{ color:'#94a3b8', font:{size:10}, boxWidth:10 } } } }
+    });
+  }
+
+  // Avg days per pipeline stage
+  var stages = ['Lead Recebido','Lead Qualificado','Proposta Enviada','Finalizado'];
+  var stageDays = [
+    0,
+    smAvgDaysTo(data.filter(function(e){ return e.leadQualificado; }), 'leadQualificadoAt') || 0,
+    smAvgDaysTo(data.filter(function(e){ return e.propostEnviada; }), 'propostEnviadaAt') || 0,
+    smAvgDaysFin(data.filter(function(e){ return e.finalizado; })) || 0
+  ];
+
+  var ctxT = document.getElementById('smChartTempo');
+  if (ctxT) {
+    if (smChartTempo) smChartTempo.destroy();
+    smChartTempo = new Chart(ctxT, {
+      type: 'bar',
+      data: { labels: stages, datasets: [{ label: 'Dias médios desde criação', data: stageDays, backgroundColor: ['#a78bfa','#8b5cf6','#3b82f6','#10b981'], borderRadius: 6 }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{color:'#94a3b8'}, grid:{color:'rgba(255,255,255,.05)'} }, x:{ ticks:{color:'#94a3b8'}, grid:{display:false} } } }
+    });
+  }
+}
+
+// ── Metas vs Realizado ──────────────────────────────────────
+function smRenderMetas(containerId, all, periodAfter, periodBefore) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+
+  // Totais por região no período
+  function sumFat(arr) {
+    return arr.filter(function(e){
+      if (!e.finalizado || !e.finalizadoAt) return false;
+      var d = new Date(e.finalizadoAt);
+      return d >= periodAfter && d <= periodBefore;
+    }).reduce(function(s,e){ return s+(e.salesValue||0); },0);
+  }
+  var baTotal  = sumFat(all.filter(function(e){ return e.funelType==='ba'; }));
+  var mgTotal  = sumFat(all.filter(function(e){ return e.funelType==='mg'; }));
+  var global   = baTotal + mgTotal;
+  var forecast = smForecast(global, periodAfter, periodBefore);
+
+  // Pré-computa região autoritativa (MG prevalece sobre BA)
+  var cmRegionsMeta = {};
+  all.forEach(function(e){
+    if (!e.cmResponsible) return;
+    var n = e.cmResponsible;
+    if (!cmRegionsMeta[n] || e.funelType === 'mg') cmRegionsMeta[n] = e.funelType || 'ba';
+  });
+
+  // Totais por vendedor no período
+  var persons = {};
+  all.forEach(function(e){
+    var n = e.cmResponsible;
+    if (!n) return;
+    if (!persons[n]) persons[n] = { name:n, region: cmRegionsMeta[n] || e.funelType || 'ba', val:0 };
+    if (e.finalizado && e.finalizadoAt) {
+      var d = new Date(e.finalizadoAt);
+      if (d >= periodAfter && d <= periodBefore) persons[n].val += e.salesValue||0;
+    }
+  });
+
+  function metaBar(label, realizado, meta, region) {
+    var pct  = meta > 0 ? realizado/meta*100 : 0;
+    var pctD = Math.round(pct);
+    var barW = Math.min(pct, 100);
+    var cls  = pct >= 100 ? 'ok' : pct >= 70 ? 'warn' : 'danger';
+    var rb   = region === 'mg' ? '<span class="badge bs" style="font-size:9px">MG</span> '
+             : region === 'ba' ? '<span class="badge bp" style="font-size:9px">BA</span> ' : '';
+    return '<div class="meta-row">'
+      +'<div class="meta-name">'+rb+label+'</div>'
+      +'<div class="meta-bar-wrap"><div class="meta-bar '+cls+'" style="width:'+barW+'%"></div></div>'
+      +'<div class="meta-vals">'
+        +'<strong style="color:var(--green)">'+fmtBRL(realizado)+'</strong>'
+        +' / <span style="color:var(--muted)">'+fmtBRL(meta)+'</span>'
+        +' <span style="color:var(--muted);font-size:11px">('+pctD+'%)</span>'
+      +'</div>'
+      +'</div>';
+  }
+
+  var html = '';
+
+  // Card de projeção
+  if (forecast !== null) {
+    var fpct = Math.round(forecast/SM_META_GLOBAL*100);
+    var fcls = fpct >= 100 ? 'g' : fpct >= 70 ? 'o' : 'b';
+    html += '<div class="forecast-card">'
+      +'<div><div class="forecast-item-lbl">Faturamento atual</div><div class="forecast-item-val g">'+fmtBRL(global)+'</div></div>'
+      +'<div><div class="forecast-item-lbl">Projeção final período</div><div class="forecast-item-val b">'+fmtBRL(Math.round(forecast))+'</div></div>'
+      +'<div><div class="forecast-item-lbl">% da meta global</div><div class="forecast-item-val '+fcls+'">'+fpct+'%</div></div>'
+      +'</div>';
+  }
+
+  // Unidades
+  html += '<div class="meta-section-title">Unidades</div>';
+  html += metaBar('🔵 Bahia (Porto Seguro)', baTotal, SM_META_BA, 'ba');
+  html += metaBar('🟢 Minas Gerais (Salinas)', mgTotal, SM_META_MG, 'mg');
+  html += metaBar('🌍 Global', global, SM_META_GLOBAL, null);
+
+  // Vendedores com meta definida
+  var comMeta = Object.values(persons).filter(function(p){ return smGetMeta(p.name) !== null; });
+  comMeta.sort(function(a,b){ return b.val-a.val; });
+  if (comMeta.length) {
+    html += '<div class="meta-section-title">Vendedores</div>';
+    comMeta.forEach(function(p){ html += metaBar(p.name, p.val, smGetMeta(p.name), p.region); });
+  }
+
+  // Vendedores sem meta
+  var semMeta = Object.values(persons).filter(function(p){ return smGetMeta(p.name)===null && p.val>0; });
+  if (semMeta.length) {
+    html += '<div class="meta-section-title" style="color:#64748b">Outros (sem meta definida)</div>';
+    semMeta.forEach(function(p){
+      var rb = p.region==='mg' ? '<span class="badge bs" style="font-size:9px">MG</span> ' : '<span class="badge bp" style="font-size:9px">BA</span> ';
+      html += '<div class="meta-row"><div class="meta-name">'+rb+p.name+'</div><div style="flex:1"></div>'
+        +'<div class="meta-vals" style="color:var(--green)">'+fmtBRL(p.val)+'</div></div>';
+    });
+  }
+
+  if (!comMeta.length && !semMeta.length) {
+    html += '<div class="empty">Nenhum fechamento no período selecionado.</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// ── Leads Parados ──────────────────────────────────────
+function smRenderLeadsParados(containerId, data) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var now = new Date();
+
+  var paradosProp = [];
+  var paradosPV   = [];
+
+  data.forEach(function(e) {
+    // Proposta enviada há 10+ dias sem fechar
+    if (e.propostEnviada && !e.finalizado && e.propostEnviadaAt) {
+      var d = Math.floor((now - new Date(e.propostEnviadaAt)) / 86400000);
+      if (d >= 10) {
+        paradosProp.push({ name:e.name||'—', responsible:e.cmResponsible||e.responsible||'—', days:d, region:e.funelType, stage:e.cmStageName||'Proposta', value:e.salesValue||0 });
+      }
+    }
+    // Pré-venda: recebido mas não qualificado em 1+ dia
+    if (e.leadRecebido && !e.leadQualificado && e.daysFromCreation >= 1) {
+      paradosPV.push({ name:e.name||'—', responsible:e.pvResponsible||e.responsible||'—', days:e.daysFromCreation, region:e.funelType, stage:e.pvStageName||'Pré-Vendas', value:0 });
+    }
+  });
+
+  paradosProp.sort(function(a,b){ return b.days-a.days; });
+  paradosPV.sort(function(a,b){ return b.days-a.days; });
+
+  function alertRow(item, threshold) {
+    var isDanger = item.days >= threshold * 2;
+    var rb = item.region==='mg' ? '<span class="badge bs" style="font-size:9px">MG</span> ' : '<span class="badge bp" style="font-size:9px">BA</span> ';
+    var valStr = item.value > 0 ? ' · <strong style="color:var(--green)">'+fmtBRL(item.value)+'</strong>' : '';
+    return '<div class="alert-row'+(isDanger?' danger':'')+'">'
+      +'<div class="alert-icon">'+(isDanger?'🔴':'🟡')+'</div>'
+      +'<div class="alert-name">'+rb+item.name+'</div>'
+      +'<div class="alert-detail">'+item.stage+' · '+item.responsible+valStr+'</div>'
+      +'<div class="alert-days'+(isDanger?' danger':'')+'">'+item.days+'d</div>'
+      +'</div>';
+  }
+
+  var html = '';
+  if (!paradosProp.length && !paradosPV.length) {
+    html = '<div class="empty" style="padding:40px">✅ Nenhum lead parado no momento!</div>';
+  } else {
+    if (paradosProp.length) {
+      html += '<div class="meta-section-title">📄 Proposta sem resposta há 10+ dias ('+paradosProp.length+')</div>';
+      paradosProp.forEach(function(item){ html += alertRow(item, 10); });
+    }
+    if (paradosPV.length) {
+      var shown = paradosPV.slice(0, 30);
+      html += '<div class="meta-section-title">👤 Sem qualificação há 1+ dia ('+paradosPV.length+')</div>';
+      shown.forEach(function(item){ html += alertRow(item, 1); });
+      if (paradosPV.length > 30) html += '<div style="text-align:center;color:var(--muted);font-size:12px;padding:10px">... e mais '+(paradosPV.length-30)+' leads</div>';
+    }
+  }
+  el.innerHTML = html;
+}
+
+// ── Evolução Histórica Mês a Mês ──────────────────────────────────────
+var smChartHistorico = null;
+function smRenderHistorico(data) {
+  if (!window._chartJsLoaded || !window.Chart) return;
+
+  // Agrupa fechamentos por mês a partir do snapshot (finalizadoAt)
+  var monthly = {};
+  data.forEach(function(e){
+    if (!e.finalizado || !e.finalizadoAt) return;
+    var d = new Date(e.finalizadoAt);
+    var key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    if (!monthly[key]) monthly[key] = { count:0, value:0 };
+    monthly[key].count++;
+    monthly[key].value += e.salesValue||0;
+  });
+
+  var keys   = Object.keys(monthly).sort().slice(-8); // últimos 8 meses
+  if (keys.length < 2) return null; // não renderiza se dados insuficientes
+
+  var labels = keys.map(function(k){ var p=k.split('-'); return p[1]+'/'+p[0].slice(2); });
+  var counts = keys.map(function(k){ return monthly[k].count; });
+  var values = keys.map(function(k){ return Math.round(monthly[k].value); });
+
+  var ctxEl = document.getElementById('smChartHistorico');
+  if (!ctxEl) return;
+  if (smChartHistorico) smChartHistorico.destroy();
+  smChartHistorico = new Chart(ctxEl, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label:'Faturamento (R$)', data:values, backgroundColor:'rgba(16,185,129,.3)', borderColor:'#10b981', borderWidth:1.5, borderRadius:5, yAxisID:'y' },
+        { label:'Fechamentos', data:counts, type:'line', borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.1)', borderWidth:2, pointRadius:4, tension:.4, yAxisID:'y1' }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ labels:{ color:'#94a3b8', font:{size:11} } } },
+      scales:{
+        y:{ position:'left', grid:{color:'rgba(51,65,85,.5)'}, ticks:{ color:'#10b981', font:{size:10}, callback:function(v){ return 'R$'+Math.round(v/1000)+'k'; } } },
+        y1:{ position:'right', grid:{drawOnChartArea:false}, ticks:{ color:'#f59e0b', font:{size:10} }, beginAtZero:true }
+      }
+    }
+  });
+  return true;
+}
+
+function smRenderAll(all, periodAfter, periodBefore) {
+  var ba = all.filter(function(e){ return e.funelType === 'ba'; });
+  var mg = all.filter(function(e){ return e.funelType === 'mg'; });
+
+  smRenderPipeline('smPipelineGeral', all, periodAfter, periodBefore);
+  smRenderPipeline('smPipelineBA',    ba,  periodAfter, periodBefore);
+  smRenderPipeline('smPipelineMG',    mg,  periodAfter, periodBefore);
+
+  smRenderKpis('smKpisGeral', all, periodAfter, periodBefore);
+  smRenderKpis('smKpisBA',    ba,  periodAfter, periodBefore);
+  smRenderKpis('smKpisMG',    mg,  periodAfter, periodBefore);
+
+  smRenderVendedorTable('smTblBA',       ba,  false, periodAfter, periodBefore);
+  smRenderVendedorTable('smTblMG',       mg,  false, periodAfter, periodBefore);
+  smRenderVendedorTable('smTblVendedor', all, true,  periodAfter, periodBefore);
+
+  smRenderInsights('smInsightsContent', all, periodAfter, periodBefore);
+  smRenderMetas('smMetasContent', all, periodAfter, periodBefore);
+  smRenderLeadsParados('smParadosContent', all);
+  smRenderCharts(all);
+}
+
+// ═══════════════════════════════════════════════
+// TOAST NOTIFICATION
+// ═══════════════════════════════════════════════
+function showToast(msg, type) {
+  var existing = document.getElementById('hase-toast');
+  if (existing) existing.remove();
+  var t = document.createElement('div');
+  t.id = 'hase-toast';
+  t.textContent = msg;
+  var bg = type === 'err' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#10b981';
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;background:' + bg + ';color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:360px;line-height:1.4;';
+  document.body.appendChild(t);
+  setTimeout(function(){ if(t.parentNode) t.remove(); }, 6000);
+}
+
+// ═══════════════════════════════════════════════
+// AUTO-RENEW TOKEN
+// ═══════════════════════════════════════════════
+async function autoRenewToken() {
+  if (!token) return;
+
+  // Sem expiry significa token não-expirante (System User) — não precisa renovar.
+  var expiryStr = store.get(TOKEN_EXPIRY_KEY);
+  if (!expiryStr) return;
+
+  var expiry = new Date(expiryStr);
+  var daysLeft = Math.floor((expiry - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysLeft > 7) return;
+  if (daysLeft <= 0) {
+    showToast('⚠ Token expirado! Tentando renovar...', 'warn');
+  } else {
+    showToast('🔄 Token expira em ' + daysLeft + ' dia(s). Renovando automaticamente...', 'warn');
+  }
+
+  // Renovação server-side (APP_SECRET fica no backend)
+  try {
+    var resp = await fetch('/renew-token', { method: 'POST' });
+    var data = await resp.json();
+
+    if (data.ok && data.expiresAt) {
+      // Busca o novo token via /meta-token
+      var tkResp = await fetch('/meta-token');
+      var tkData = await tkResp.json();
+      if (tkData.token) {
+        token = tkData.token;
+        store.set(TOKEN_KEY, token);
+        store.set(TOKEN_EXPIRY_KEY, data.expiresAt);
+        showToast('✅ Token renovado automaticamente! Válido até ' + new Date(data.expiresAt).toLocaleDateString('pt-BR'), 'ok');
+      }
+    } else {
+      console.warn('Auto-renew falhou:', data.error);
+      if (!expiryStr) return;
+      showToast('⚠ Não foi possível renovar o token automaticamente. Atualize manualmente pelo botão Token.', 'err');
+    }
+  } catch (e) {
+    console.warn('Auto-renew erro:', e.message);
+  }
+}
+
+// INIT
+// ═══════════════════════════════════════════════
+window.onerror = function(msg, src, line, col, err) {
+  setStatus('err', 'Erro JS: ' + msg + ' (linha ' + line + ')');
+  console.error('Dashboard erro:', msg, 'linha', line);
+};
+
+document.addEventListener('DOMContentLoaded', async function() {
+  // Carrega config persistente do servidor (recupera tokens mesmo após limpar cache)
+  await loadConfig();
+
+  if (token) {
+    await autoRenewToken();
+    loadData();
+  } else {
+    setStatus('err', 'Configure o token para começar');
+    setTimeout(function(){ openModal(); }, 300);
+  }
+
+  // Solar Market: carrega snapshot do servidor (merge com localStorage) antes de inicializar
+  await smLoadSnapshotFromServer();
+  loadSmData();
+
+  // Atualiza botão header se SM configurado
+  var smKey = store.get(SM_APIKEY_KEY);
+  if (smKey) {
+    var btn = document.getElementById('smConnectBtn');
+    if (btn) { btn.textContent = '✅ Solar Market'; btn.style.color = '#34d399'; }
+  }
+});
+
+// ═══════════════════════════════════════════════
+// SENHA & LOGOUT
+// ═══════════════════════════════════════════════
+function openPwModal() {
+  document.getElementById('pwModal').style.display = 'flex';
+  document.getElementById('pwNewInput').value = '';
+  document.getElementById('pwConfInput').value = '';
+  document.getElementById('pwErr').style.display = 'none';
+  document.getElementById('pwNewInput').focus();
+}
+function closePwModal() {
+  document.getElementById('pwModal').style.display = 'none';
+}
+async function changePw() {
+  var np = document.getElementById('pwNewInput').value;
+  var cp = document.getElementById('pwConfInput').value;
+  var err = document.getElementById('pwErr');
+  err.style.display = 'none';
+  if (np.length < 4) { err.textContent = 'Senha deve ter no mínimo 4 caracteres.'; err.style.display = 'block'; return; }
+  if (np !== cp) { err.textContent = 'As senhas não coincidem.'; err.style.display = 'block'; return; }
+  try {
+    var r = await fetch('/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newPassword: np }) });
+    var d = await r.json();
+    if (d.ok) { closePwModal(); alert('✅ Senha alterada com sucesso!'); }
+    else { err.textContent = d.error || 'Erro ao salvar.'; err.style.display = 'block'; }
+  } catch(e) { err.textContent = 'Erro de conexão.'; err.style.display = 'block'; }
+}
+async function doLogout() {
+  if (!confirm('Deseja sair do dashboard?')) return;
+  await fetch('/logout', { method: 'POST' });
+  window.location.href = '/';
+}
+</script>
+</body>
+</html>

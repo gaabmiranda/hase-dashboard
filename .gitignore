@@ -1,0 +1,8 @@
+# Secrets e estado local — NUNCA commitar
+.claude/
+config.json
+snapshot.json
+leads-events.json
+daily_data.json
+node_modules/
+ROTEIROS_HASE_SOLAR.docx
