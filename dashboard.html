@@ -1114,13 +1114,10 @@ function applyInacModal() {
   if (activeRegions7d.has('Outros')) known.push('Outros');
   var inactivesSet = new Set(known.filter(function(k){ return !activeRegions7d.has(k); }));
 
-  var kept = selectedRegions.filter(function(k){ return k === 'all' || !inactivesSet.has(k); });
+  // Mantém 'all' se estava lá — inativas marcadas SOMAM às ativas, não substituem.
+  // É o caso de uso principal: "quero ver tudo junto".
+  var kept = selectedRegions.filter(function(k){ return !inactivesSet.has(k); });
   var next = kept.concat(Array.from(inacDraft));
-
-  // Se algo além de 'all' foi selecionado, remove 'all' pra não sobrepor
-  if (next.length > 1 && next.includes('all')) {
-    next = next.filter(function(k){ return k !== 'all'; });
-  }
   if (next.length === 0) next = ['all'];
 
   selectedRegions = next;
@@ -1130,14 +1127,20 @@ function applyInacModal() {
   applyFilters();
 }
 
+// Semântica da seleção:
+//   'all'                 → todas as regiões ATIVAS nos últimos 7d
+//   'all' + [inativas]    → ativas + essas inativas (caso "ver tudo junto")
+//   [regiões explícitas]  → só essas
 function filtered() {
-  const regs = getSelectedRegions();
-  const allSelected = regs.includes('all');
+  const selSet = new Set(getSelectedRegions());
+  const allSelected = selSet.has('all');
   const cam = document.getElementById('filtCampaign').value;
-  return rawData.filter(d =>
-    (allSelected || regs.includes(d.region)) &&
-    (cam === 'all' || d.campaign === cam)
-  );
+  return rawData.filter(d => {
+    const regionOk = allSelected
+      ? (activeRegions7d.has(d.region) || selSet.has(d.region))
+      : selSet.has(d.region);
+    return regionOk && (cam === 'all' || d.campaign === cam);
+  });
 }
 
 function aggTotal(data) {
