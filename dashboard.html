@@ -136,6 +136,26 @@ tr:last-child td{border-bottom:none}
 .bo{background:rgba(107,114,128,.18);color:#9ca3af}
 .bc{background:rgba(236,72,153,.18);color:#f472b6}
 .bmc{background:rgba(139,92,246,.18);color:#a78bfa}
+.bar{background:rgba(251,146,60,.18);color:#fdba74}
+.bpa{background:rgba(20,184,166,.18);color:#5eead4}
+
+/* Botão "Inativas" no filtro */
+.reg-inativas{background:transparent;border:1px dashed var(--border);color:var(--muted);font-style:italic}
+.reg-inativas:hover{border-color:var(--muted);color:var(--text)}
+.reg-inativas.has-selected{border-style:solid;border-color:var(--orange);color:var(--orange)}
+.reg-empty-msg{font-size:11px;color:var(--muted);font-style:italic;padding:5px 0}
+
+/* Modal de inativas: lista de checkboxes */
+.inac-actions{display:flex;gap:8px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.inac-actions .btn{flex:1;justify-content:center}
+.inac-list{max-height:280px;overflow-y:auto;margin-bottom:6px}
+.inac-item{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid rgba(51,65,85,.4);cursor:pointer;user-select:none}
+.inac-item:last-child{border-bottom:none}
+.inac-item:hover{background:rgba(255,255,255,.03)}
+.inac-item input[type=checkbox]{cursor:pointer;accent-color:var(--orange);width:15px;height:15px}
+.inac-item-name{flex:1;font-size:13px;color:var(--text)}
+.inac-item-sub{font-size:11px;color:var(--muted)}
+.inac-empty{padding:24px 8px;text-align:center;color:var(--muted);font-size:12px}
 
 
 /* ── Modal ── */
@@ -286,6 +306,23 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Modal: Regiões inativas (últimos 7d) -->
+<div class="overlay" id="inacModal">
+  <div class="modal">
+    <h3>📍 Regiões inativas <span id="inacModalCount" style="font-size:12px;color:var(--muted);font-weight:400">(0)</span></h3>
+    <p>Regiões sem gasto nos últimos 7 dias. Marque as que você quer incluir na análise.</p>
+    <div class="inac-actions">
+      <button class="btn btn-ghost btn-sm" onclick="inacMarkAll()">Marcar todas</button>
+      <button class="btn btn-ghost btn-sm" onclick="inacClearAll()">Limpar</button>
+    </div>
+    <div class="inac-list" id="inacList"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeInacModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="applyInacModal()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Solar Market Token Modal -->
 <div class="overlay" id="smModal">
   <div class="modal">
@@ -373,14 +410,7 @@ tr:last-child td{border-bottom:none}
     <div style="display:flex;align-items:center;gap:6px">
       <span class="filter-label">Região:</span>
       <div id="filtRegion" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
-        <button class="p-btn reg-btn on" data-region="all" onclick="toggleRegion(this)">Todas</button>
-        <button class="p-btn reg-btn" data-region="Porto Seguro" onclick="toggleRegion(this)">Porto Seguro</button>
-        <button class="p-btn reg-btn" data-region="Salinas" onclick="toggleRegion(this)">Salinas</button>
-        <button class="p-btn reg-btn" data-region="Taiobeiras" onclick="toggleRegion(this)">Taiobeiras</button>
-        <button class="p-btn reg-btn" data-region="Capelinha" onclick="toggleRegion(this)">Capelinha</button>
-        <button class="p-btn reg-btn" data-region="Montes Claros" onclick="toggleRegion(this)">Montes Claros</button>
-        <button class="p-btn reg-btn" data-region="Araçuaí" onclick="toggleRegion(this)">Araçuaí</button>
-        <button class="p-btn reg-btn" data-region="Outros" onclick="toggleRegion(this)">Outros</button>
+        <span class="reg-empty-msg">Carregando regiões ativas…</span>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
@@ -670,6 +700,15 @@ let tableAgg = [];
 let sortCfg = { field: 'totalLeads', dir: 'desc' };
 let activePreset = 'last_30d';
 let customRange = null;
+
+// Regiões ativas nos últimos 7d (spend > 0). Populado por loadActive7d().
+// Sempre inclui 'Outros' se houver adsets sem match — atualizado dinamicamente.
+let activeRegions7d = new Set();
+// Seleção do usuário: array de region keys ou 'all'. Persistida em localStorage.
+const SELECTED_REGIONS_KEY = 'hase_selected_regions';
+let selectedRegions = store.parse(SELECTED_REGIONS_KEY, ['all']);
+// Estado temporário do modal de inativas (checkboxes) — commit ao clicar Aplicar
+let inacDraft = new Set();
 var smActivePreset = 'this_month'; // filtro independente do funil comercial
 let charts = {};
 
@@ -687,19 +726,28 @@ function getAction(actions, type) {
   return a ? parseFloat(a.value) : 0;
 }
 
+// ─── Registry de regiões — fonte única da verdade ───
+// Pra adicionar uma região nova: 1 linha aqui. `match` é o regex contra adset_name em UPPERCASE.
+// Novo badge? Adicionar CSS na classe correspondente (.bp, .bs, .bt, .bc, .bmc, .bar, .bpa, .bo).
+const REGIONS = [
+  { key: 'Porto Seguro',  match: /PORTO SEGURO|VIDEOVIEW PORTO/, badge: 'bp'  },
+  { key: 'Salinas',       match: /SALINAS/,                       badge: 'bs'  },
+  { key: 'Taiobeiras',    match: /TAIOBEIRAS/,                    badge: 'bt'  },
+  { key: 'Capelinha',     match: /CAPELINHA/,                     badge: 'bc'  },
+  { key: 'Montes Claros', match: /MONTES CLAROS/,                 badge: 'bmc' },
+  { key: 'Araçuaí',       match: /ARACUAI|ARAÇUAÍ/,               badge: 'bar' },
+  { key: 'Pedra Azul',    match: /PEDRA AZUL/,                    badge: 'bpa' }
+];
+
 function getRegion(name) {
-  const n = name.toUpperCase();
-  if (n.includes('PORTO SEGURO') || n.includes('VIDEOVIEW PORTO')) return 'Porto Seguro';
-  if (n.includes('SALINAS')) return 'Salinas';
-  if (n.includes('TAIOBEIRAS')) return 'Taiobeiras';
-  if (n.includes('CAPELINHA')) return 'Capelinha';
-  if (n.includes('MONTES CLAROS')) return 'Montes Claros';
-  if (n.includes('ARACUAI') || n.includes('ARAÇUAÍ')) return 'Araçuaí';
-  return 'Outros';
+  const u = (name || '').toUpperCase();
+  const r = REGIONS.find(x => x.match.test(u));
+  return r ? r.key : 'Outros';
 }
 
 function badgeClass(r) {
-  return {'Porto Seguro':'bp','Salinas':'bs','Taiobeiras':'bt','Capelinha':'bc','Montes Claros':'bmc','Araçuaí':'bs'}[r] || 'bo';
+  const item = REGIONS.find(x => x.key === r);
+  return item ? item.badge : 'bo';
 }
 
 // ═══════════════════════════════════════════════
@@ -837,6 +885,31 @@ async function fetchPages(url) {
   return all;
 }
 
+// Determina quais regiões tiveram gasto > 0 nos últimos 7 dias — independe do preset selecionado.
+// Popula activeRegions7d, usado por renderRegionButtons().
+async function loadActive7d() {
+  if (!token) return;
+  try {
+    const p = new URLSearchParams({
+      fields: 'adset_name,spend',
+      level: 'adset',
+      date_preset: 'last_7d',
+      limit: '500',
+      access_token: token
+    });
+    const rows = await fetchPages(`${API}/${ACCOUNT}/insights?${p}`);
+    const active = new Set();
+    rows.forEach(r => {
+      if ((parseFloat(r.spend) || 0) > 0) active.add(getRegion(r.adset_name));
+    });
+    activeRegions7d = active;
+  } catch (e) {
+    console.warn('loadActive7d falhou:', e.message);
+    // Se falhar, tratamos todas as regiões conhecidas como ativas (fallback seguro)
+    activeRegions7d = new Set(REGIONS.map(r => r.key));
+  }
+}
+
 async function loadData() {
   if (!token) { openModal(); return; }
 
@@ -858,7 +931,11 @@ async function loadData() {
       ...getDateParams()
     });
 
-    const data = await fetchPages(`${API}/${ACCOUNT}/insights?${params}`);
+    // Fetch paralelo: insights do preset + insights fixos dos últimos 7d
+    const [data] = await Promise.all([
+      fetchPages(`${API}/${ACCOUNT}/insights?${params}`),
+      loadActive7d()
+    ]);
 
     rawData = data.map(d => {
       const formLeads = getAction(d.actions, 'lead');
@@ -887,6 +964,12 @@ async function loadData() {
     sel.innerHTML = '<option value="all">Todas</option>' +
       campaigns.map(c => `<option value="${c}">${c}</option>`).join('');
 
+    // Se rawData tem adsets sem match ('Outros') e Outros está ativo agora,
+    // exibe também esse botão pra permitir filtragem
+    if (rawData.some(d => d.region === 'Outros')) activeRegions7d.add('Outros');
+
+    renderRegionButtons();
+
     const now = new Date().toLocaleTimeString('pt-BR');
     setStatus('ok', `${rawData.length} registros • atualizado ${now}`);
 
@@ -907,29 +990,143 @@ async function loadData() {
 // ═══════════════════════════════════════════════
 // AGGREGATIONS
 // ═══════════════════════════════════════════════
-function getSelectedRegions() {
-  var active = [];
-  document.querySelectorAll('#filtRegion .reg-btn.on').forEach(function(b) {
-    active.push(b.dataset.region);
+function getSelectedRegions() { return selectedRegions.slice(); }
+
+function saveSelectedRegions() {
+  try { store.set(SELECTED_REGIONS_KEY, JSON.stringify(selectedRegions)); } catch(e){}
+}
+
+// Renderiza os botões de região: 'Todas' + ativas7d + botão 'Inativas (N)' se houver.
+// Idempotente — chame sempre que activeRegions7d ou selectedRegions mudarem.
+function renderRegionButtons() {
+  var container = document.getElementById('filtRegion');
+  if (!container) return;
+
+  // Ordem canônica das regiões conhecidas + 'Outros' se ativo
+  var known = REGIONS.map(function(r){ return r.key; });
+  if (activeRegions7d.has('Outros')) known.push('Outros');
+
+  var actives   = known.filter(function(k){ return activeRegions7d.has(k); });
+  var inactives = known.filter(function(k){ return !activeRegions7d.has(k); });
+
+  var selSet = new Set(selectedRegions);
+  var isAllOn = selSet.has('all');
+  // Quantas inativas o usuário incluiu (mostra no botão)
+  var inacSelectedCount = inactives.filter(function(k){ return selSet.has(k); }).length;
+
+  var html = '';
+  html += '<button class="p-btn reg-btn ' + (isAllOn ? 'on' : '') + '" data-region="all" onclick="toggleRegion(this)">Todas</button>';
+  actives.forEach(function(k) {
+    var on = selSet.has(k) ? 'on' : '';
+    html += '<button class="p-btn reg-btn ' + on + '" data-region="' + k + '" onclick="toggleRegion(this)">' + k + '</button>';
   });
-  return active;
+
+  if (inactives.length > 0) {
+    var hasSel = inacSelectedCount > 0 ? ' has-selected' : '';
+    var lbl = inacSelectedCount > 0
+      ? 'Inativas (' + inacSelectedCount + '/' + inactives.length + ') ▾'
+      : 'Inativas (' + inactives.length + ') ▾';
+    html += '<button class="p-btn reg-btn reg-inativas' + hasSel + '" onclick="openInacModal()">' + lbl + '</button>';
+  }
+
+  if (actives.length === 0 && inactives.length === 0) {
+    html = '<span class="reg-empty-msg">Nenhuma região reconhecida — verifique o token</span>';
+  }
+
+  container.innerHTML = html;
 }
 
 function toggleRegion(btn) {
   var region = btn.dataset.region;
-  var allBtn = document.querySelector('#filtRegion .reg-btn[data-region="all"]');
+  var selSet = new Set(selectedRegions);
+
   if (region === 'all') {
-    // "Todas" ativado: desativa todos os outros
-    document.querySelectorAll('#filtRegion .reg-btn').forEach(function(b) { b.classList.remove('on'); });
-    btn.classList.add('on');
+    selectedRegions = ['all'];
   } else {
-    // Desativa "Todas"
-    allBtn.classList.remove('on');
-    btn.classList.toggle('on');
-    // Se nenhum selecionado, volta pra "Todas"
-    var anyOn = document.querySelectorAll('#filtRegion .reg-btn.on').length > 0;
-    if (!anyOn) allBtn.classList.add('on');
+    selSet.delete('all');
+    if (selSet.has(region)) selSet.delete(region);
+    else selSet.add(region);
+    if (selSet.size === 0) selSet.add('all');
+    selectedRegions = Array.from(selSet);
   }
+  saveSelectedRegions();
+  renderRegionButtons();
+  applyFilters();
+}
+
+// ─── Modal de inativas ───
+function openInacModal() {
+  var known = REGIONS.map(function(r){ return r.key; });
+  if (activeRegions7d.has('Outros')) known.push('Outros');
+  var inactives = known.filter(function(k){ return !activeRegions7d.has(k); });
+  var selSet = new Set(selectedRegions);
+
+  // Snapshot do estado atual pra o Cancelar funcionar
+  inacDraft = new Set(inactives.filter(function(k){ return selSet.has(k); }));
+
+  document.getElementById('inacModalCount').textContent = '(' + inactives.length + ')';
+
+  var listEl = document.getElementById('inacList');
+  if (inactives.length === 0) {
+    listEl.innerHTML = '<div class="inac-empty">Nenhuma região inativa — todas geraram gasto nos últimos 7 dias.</div>';
+  } else {
+    listEl.innerHTML = inactives.map(function(k) {
+      var checked = inacDraft.has(k) ? 'checked' : '';
+      // Conta leads no período atual (rawData) só como referência
+      var leads = rawData.filter(function(d){ return d.region === k; }).reduce(function(s,d){ return s + d.totalLeads; }, 0);
+      var sub = leads > 0 ? leads + ' leads no período atual' : 'sem dados no período atual';
+      return '<label class="inac-item">' +
+             '<input type="checkbox" data-region="' + k + '" ' + checked + ' onchange="inacToggle(this)">' +
+             '<span class="inac-item-name">' + k + '</span>' +
+             '<span class="inac-item-sub">' + sub + '</span>' +
+             '</label>';
+    }).join('');
+  }
+  document.getElementById('inacModal').style.display = 'flex';
+}
+
+function closeInacModal() {
+  document.getElementById('inacModal').style.display = 'none';
+}
+
+function inacToggle(cb) {
+  var k = cb.dataset.region;
+  if (cb.checked) inacDraft.add(k); else inacDraft.delete(k);
+}
+
+function inacMarkAll() {
+  document.querySelectorAll('#inacList input[type=checkbox]').forEach(function(cb) {
+    cb.checked = true;
+    inacDraft.add(cb.dataset.region);
+  });
+}
+
+function inacClearAll() {
+  document.querySelectorAll('#inacList input[type=checkbox]').forEach(function(cb) {
+    cb.checked = false;
+  });
+  inacDraft.clear();
+}
+
+function applyInacModal() {
+  // Remove todas as inativas atuais da seleção e re-adiciona apenas as marcadas no draft
+  var known = REGIONS.map(function(r){ return r.key; });
+  if (activeRegions7d.has('Outros')) known.push('Outros');
+  var inactivesSet = new Set(known.filter(function(k){ return !activeRegions7d.has(k); }));
+
+  var kept = selectedRegions.filter(function(k){ return k === 'all' || !inactivesSet.has(k); });
+  var next = kept.concat(Array.from(inacDraft));
+
+  // Se algo além de 'all' foi selecionado, remove 'all' pra não sobrepor
+  if (next.length > 1 && next.includes('all')) {
+    next = next.filter(function(k){ return k !== 'all'; });
+  }
+  if (next.length === 0) next = ['all'];
+
+  selectedRegions = next;
+  saveSelectedRegions();
+  closeInacModal();
+  renderRegionButtons();
   applyFilters();
 }
 
